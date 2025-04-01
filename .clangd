@@ -1,0 +1,18 @@
+Diagnostics:
+  ClangTidy:
+    Add:
+      - modernize*
+      - bugprone*
+      - cppcoreguidelines*
+      - llvm*
+      - performance*
+      - readability*
+    Remove:
+      - readability-braces-around-statements
+      - llvmlibc-callee-namespace
+      - cppcoreguidelines-pro-type-union-access
+      - modernize-use-trailing-return-type
+      - llvmlibc-restrict-system-libc-headers
+      - llvmlibc-implementation-in-namespace
+CompileFlags:
+  CompilationDatabase: build/

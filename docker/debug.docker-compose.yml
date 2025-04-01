@@ -1,0 +1,17 @@
+version: "3"
+
+services:
+  test:
+    build:
+      context: ./../
+      dockerfile: docker/debug.Dockerfile
+    container_name: test_debug
+    # TODO: settings for remote debugging
+    ports:
+      - 8000:8000
+    volumes:
+      - ./../:/app
+    security_opt:
+      - seccomp:unconfined
+    cap_add:
+      - SYS_PTRACE
