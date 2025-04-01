@@ -22,31 +22,10 @@
             }
         },
         {
-            "name": "RelWithDebInfo",
-            "inherits": "Base",
-            "cacheVariables": {
-                "CMAKE_BUILD_TYPE": "RelWithDebInfo"
-            }
-        },
-        {
             "name": "Release",
             "inherits": "Base",
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Release"
-            }
-        },
-        {
-            "name": "DebugTest",
-            "inherits": "Debug",
-            "cacheVariables": {
-                "BUILD_TESTING": "ON"
-            }
-        },
-        {
-            "name": "ReleaseTest",
-            "inherits": "Release",
-            "cacheVariables": {
-                "BUILD_TESTING": "ON"
             }
         }
     ],
@@ -56,20 +35,8 @@
             "configurePreset": "Debug"
         },
         {
-            "name": "RelWithDebInfo",
-            "configurePreset": "RelWithDebInfo"
-        },
-        {
             "name": "Release",
             "configurePreset": "Release"
-        },
-        {
-            "name": "DebugTest",
-            "configurePreset": "DebugTest"
-        },
-        {
-            "name": "ReleaseTest",
-            "configurePreset": "ReleaseTest"
         }
     ]
 }

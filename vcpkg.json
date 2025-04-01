@@ -1,9 +1,8 @@
 {
-    "name": "project-name",
+    "name": "lab-osm",
     "version-string": "1.0",
     "dependencies": [
-        "fmt",
-        "gtest",
-        "spdlog"
+        "quill",
+        "cpp-httplib"
     ]
 }
