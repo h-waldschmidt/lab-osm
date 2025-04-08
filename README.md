@@ -1,11 +1,7 @@
-# cmake-vcpkg-template
-
-## Instructions
-
-Make sure `ninja` and `cmake` is installed for building.
+# Lab Course Algorithms on OSM Data
 
 
-## Cloning/Updating
+## Cloning
 
 Remember to recursively clone the repository to include `vcpkg`.
 

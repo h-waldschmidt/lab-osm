@@ -1,8 +1,0 @@
-{
-    "name": "lab-osm",
-    "version-string": "1.0",
-    "dependencies": [
-        "quill",
-        "cpp-httplib"
-    ]
-}

@@ -1,3 +1,6 @@
-[submodule "vcpkg"]
-	path = vcpkg
-	url = https://github.com/microsoft/vcpkg.git
+[submodule "cpp-httplib"]
+	path = cpp-httplib
+	url = https://github.com/yhirose/cpp-httplib.git
+[submodule "protozero"]
+	path = protozero
+	url = https://github.com/mapbox/protozero.git
