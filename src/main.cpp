@@ -160,7 +160,7 @@ int main(int argc, char* argv[]) {
 }
 */
 
-#include "graph.h"
+#include "httplib.h"
 
 int main() {
     labosm::Graph g("../stgtregbz.fmi", true, 8, labosm::Heuristic::MIXED);
@@ -195,8 +195,7 @@ int main() {
         // g.bidirectionalDijkstraGetPath(bd_data);
     }
 
-    int threshold = 40000;
-
+    /*
     g.createHubLabelsWithoutIS();
     {
         labosm::QueryData bd_data(g.getNumNodes());
@@ -207,7 +206,25 @@ int main() {
         std::cout << bd_data.m_meeting_node << std::endl;
     }
 
+
     std::cout << "Average Label size: " << g.averageLabelSize() << std::endl;
     std::cout << "Max Label size: " << g.maxLabelSize() << std::endl;
+    */
+
+    httplib::Server svr;
+    // first the static content: website etc.
+    svr.set_mount_point("/", "../static");
+
+    // TODO: api for the graph
+    // TODO: should work with JSON
+    svr.Get(R"(/api/graph)", [&](const httplib::Request& req, httplib::Response& res) {
+        res.set_content(R"({"status": "ok"})", "application/json");
+    });
+
+    // TODO: More
+
+    std::cout << "Server started on port 8080" << std::endl;
+    svr.listen("0.0.0.0", 8080);
+
     return 0;
 }

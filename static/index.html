@@ -1,9 +1,109 @@
 <!DOCTYPE html>
 <html lang="en">
     <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+        <script src="index.js"></script>
+        <style>
+            #map {
+                margin: auto;
+                width: 100%;
+                height: 60vh;
+                margin-bottom: 1vh;
+            }
+        </style>
+
         <title>LabOSM Web App</title>
+
+        <link
+            rel="stylesheet"
+            href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+            integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+            crossorigin=""
+        />
+
+        <script
+            src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+            integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+            crossorigin=""
+        ></script>
     </head>
-    <body>
-        <h1>LabOSM Web App</h1>
+    <body onload="mapInit()">
+        <div class="p-10">
+            <h1
+                class="mb-6 text-4xl font-extrabold leading-none tracking-tight text-gray-900"
+            >
+                LabOSM Web App
+            </h1>
+            <div id="map"></div>
+            <div class="container mx-auto p-4">
+                <!-- Top Section: Coordinates and Buttons -->
+                <div class="flex flex-wrap justify-between items-center mb-6">
+                    <!-- Coordinates Section -->
+                    <div id="coordinates" class="mb-4 md:mb-0">
+                        <p>
+                            <strong>Start Point:</strong>
+                            <span id="marker1-coords"></span>
+                        </p>
+                        <p>
+                            <strong>End Point:</strong>
+                            <span id="marker2-coords"></span>
+                        </p>
+                    </div>
+
+                    <!-- Buttons Section -->
+                    <div class="space-x-4">
+                        <button
+                            id="start-button"
+                            type="button"
+                            onclick="graphRequest()"
+                            class="cursor-pointer bg-gray-600 text-gray-100 hover:bg-gray-700 hover:scale-105 active:bg-gray-800 active:scale-95 px-8 py-3 rounded-xl shadow-md transition duration-300"
+                        >
+                            Start Computation
+                        </button>
+                        <button
+                            id="clear-button"
+                            type="button"
+                            onclick="clearTable()"
+                            class="cursor-pointer bg-gray-600 text-gray-100 hover:bg-gray-700 hover:scale-105 active:bg-gray-800 active:scale-95 px-8 py-3 rounded-xl shadow-md transition duration-300"
+                        >
+                            Clear Count
+                        </button>
+
+                        <button
+                            id="btn-additional1"
+                            type="button"
+                            onclick="additionalFunction1()"
+                            class="cursor-pointer bg-gray-600 text-gray-100 hover:bg-gray-700 hover:scale-105 active:bg-gray-800 active:scale-95 px-8 py-3 rounded-xl shadow-md transition duration-300"
+                        >
+                            Additional 1
+                        </button>
+                        <button
+                            id="btn-additional2"
+                            type="button"
+                            onclick="additionalFunction2()"
+                            class="cursor-pointer bg-gray-600 text-gray-100 hover:bg-gray-700 hover:scale-105 active:bg-gray-800 active:scale-95 px-8 py-3 rounded-xl shadow-md transition duration-300"
+                        >
+                            Additional 2
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Bottom Section: Additional Information -->
+                <div id="info" class="p-4 border-t border-gray-300">
+                    <p>
+                        <strong>Memory Usage:</strong>
+                        <span id="memory-usage">--</span>
+                    </p>
+                    <p>
+                        <strong>Runtime:</strong> <span id="runtime">--</span>
+                    </p>
+                    <p>
+                        <strong>Distance:</strong> <span id="distance">--</span>
+                    </p>
+                </div>
+            </div>
+        </div>
     </body>
 </html>
