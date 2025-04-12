@@ -8,7 +8,11 @@
 #include <queue>
 #include <random>
 #include <sstream>
+#include <tuple>
 #include <unordered_set>
+#include <utility>
+
+#include "helper.h"
 
 #define _USE_MATH_DEFINES
 #include <math.h>
@@ -177,8 +181,22 @@ void Graph::dijkstraQuery(DijkstraQueryData& data) {
         }
     }
     data.m_distance = data.m_distances[data.m_end];
+}
 
-    // TODO: return path
+void Graph::dijkstraExtractPath(DijkstraQueryData& data) {
+    if (!(data.m_distance < std::numeric_limits<int>::max() || data.m_distance > -1)) {
+        std::cout << "Can't return path for invalid data!" << std::endl;
+        return;
+    }
+
+    data.m_path.clear();
+
+    int cur_node = data.m_end;
+    while (cur_node != data.m_start) {
+        data.m_path.push_back(cur_node);
+        cur_node = data.m_prev[cur_node];
+    }
+    std::reverse(data.m_path.begin(), data.m_path.end());
 }
 
 void Graph::bidirectionalDijkstraGetPath(QueryData& data) {
@@ -194,13 +212,13 @@ void Graph::bidirectionalDijkstraGetPath(QueryData& data) {
 
     int cur_node = data.m_meeting_node;
     while (cur_node != data.m_start) {
-        cur_node = data.m_fwd_prev[cur_node];
+        cur_node = data.m_fwd_prev_edge[cur_node].first;
         fwd_path.push_back(cur_node);
     }
 
     cur_node = data.m_meeting_node;
     while (cur_node != data.m_end) {
-        cur_node = data.m_bwd_prev[cur_node];
+        cur_node = data.m_bwd_prev_edge[cur_node].first;
         bwd_path.push_back(cur_node);
     }
 
@@ -261,7 +279,8 @@ void Graph::contractionHierarchyQuery(QueryData& data) {
             if (fwd_node.first > data.m_distance) break;
 
             // forward step
-            for (Edge& e : m_graph[fwd_node.second]) {
+            for (int i = 0; i < m_graph[fwd_node.second].size(); ++i) {
+                Edge& e = m_graph[fwd_node.second][i];
                 if (!data.m_visited_fwd[e.m_target] || data.m_distances_fwd[e.m_target] > fwd_node.first + e.m_cost) {
                     if (!data.m_visited_fwd[e.m_target]) data.m_reset_nodes_fwd.push_back(e.m_target);
 
@@ -269,7 +288,7 @@ void Graph::contractionHierarchyQuery(QueryData& data) {
                     fwd_pq.push(std::make_pair(data.m_distances_fwd[e.m_target], e.m_target));
                     data.m_visited_fwd[e.m_target] = true;
 
-                    data.m_fwd_prev[e.m_target] = fwd_node.second;
+                    data.m_fwd_prev_edge[e.m_target] = std::make_pair(fwd_node.second, i);
                 }
 
                 if (data.m_visited_bwd[e.m_target] &&
@@ -293,7 +312,8 @@ void Graph::contractionHierarchyQuery(QueryData& data) {
             if (bwd_node.first > data.m_distance) break;
 
             // backward step
-            for (Edge& e : m_reverse_graph[bwd_node.second]) {
+            for (int i = 0; i < m_reverse_graph[bwd_node.second].size(); ++i) {
+                Edge& e = m_reverse_graph[bwd_node.second][i];
                 if (!data.m_visited_bwd[e.m_target] || data.m_distances_bwd[e.m_target] > bwd_node.first + e.m_cost) {
                     if (!data.m_visited_fwd[e.m_target]) data.m_reset_nodes_bwd.push_back(e.m_target);
 
@@ -301,7 +321,7 @@ void Graph::contractionHierarchyQuery(QueryData& data) {
                     bwd_pq.push(std::make_pair(data.m_distances_bwd[e.m_target], e.m_target));
                     data.m_visited_bwd[e.m_target] = true;
 
-                    data.m_bwd_prev[e.m_target] = bwd_node.second;
+                    data.m_bwd_prev_edge[e.m_target] = std::make_pair(bwd_node.second, i);
                 }
 
                 if (data.m_visited_fwd[e.m_target] &&
@@ -318,6 +338,98 @@ void Graph::contractionHierarchyQuery(QueryData& data) {
         // termination condition
         if (fwd_node.first >= data.m_distance || bwd_node.first >= data.m_distance) {
             break;
+        }
+    }
+}
+
+void Graph::contractionHierarchyExtractPath(QueryData& data) {
+    if (!(data.m_distance < std::numeric_limits<int>::max() || data.m_distance > -1)) {
+        std::cout << "Can't return path for invalid data!" << std::endl;
+        return;
+    }
+
+    data.m_shortest_path.clear();
+    std::vector<std::tuple<int, int, bool>> fwd_edges;
+
+    int cur_node = data.m_meeting_node;
+
+    while (cur_node != data.m_start) {
+        fwd_edges.push_back(
+            std::make_tuple(data.m_fwd_prev_edge[cur_node].first, data.m_fwd_prev_edge[cur_node].second, true));
+        cur_node = data.m_fwd_prev_edge[cur_node].first;
+    }
+    std::reverse(fwd_edges.begin(), fwd_edges.end());
+
+    std::vector<int> fwd_path;
+    // resolve shortcut edges
+    if (fwd_edges.empty()) {
+        fwd_path.push_back(data.m_start);
+    } else {
+        unpackEdge(fwd_edges[0], fwd_path);
+
+        for (size_t i = 1; i < fwd_edges.size(); ++i) {
+            std::vector<int> path;
+            unpackEdge(fwd_edges[i], path);
+            fwd_path.insert(fwd_path.end(), path.begin() + 1, path.end());
+        }
+    }
+
+    std::vector<std::tuple<int, int, bool>> bwd_edges;
+    cur_node = data.m_meeting_node;
+    while (cur_node != data.m_end) {
+        bwd_edges.push_back(
+            std::make_tuple(data.m_bwd_prev_edge[cur_node].first, data.m_bwd_prev_edge[cur_node].second, false));
+        cur_node = data.m_bwd_prev_edge[cur_node].first;
+    }
+
+    std::vector<int> bwd_path;
+    if (bwd_edges.empty()) {
+        bwd_path.push_back(data.m_end);
+    } else {
+        unpackEdge(bwd_edges[0], bwd_path);
+        for (size_t i = 1; i < bwd_edges.size(); ++i) {
+            std::vector<int> path;
+            unpackEdge(bwd_edges[i], path);
+            bwd_path.insert(bwd_path.end(), path.begin() + 1, path.end());
+        }
+    }
+
+    // combine the paths
+    for (size_t i = 0; i < fwd_path.size(); ++i) {
+        data.m_shortest_path.push_back(fwd_path[i]);
+    }
+    for (size_t i = 1; i < bwd_path.size(); ++i) {
+        data.m_shortest_path.push_back(bwd_path[i]);
+    }
+}
+
+void Graph::unpackEdge(const std::tuple<int, int, bool>& edge_index, std::vector<int>& path) {
+    const Edge* edge = nullptr;
+    if (std::get<2>(edge_index)) {
+        edge = &m_graph[std::get<0>(edge_index)][std::get<1>(edge_index)];
+    } else {
+        edge = &m_reverse_graph[std::get<0>(edge_index)][std::get<1>(edge_index)];
+    }
+    if (!edge->isShortcut()) {
+        if (path.empty() || (path.back() != std::get<0>(edge_index) && path.back() != edge->m_target)) {
+            if (std::get<2>(edge_index))
+                path.push_back(std::get<0>(edge_index));
+            else
+                path.push_back(edge->m_target);
+        }
+
+        if (std::get<2>(edge_index))
+            path.push_back(edge->m_target);
+        else
+            path.push_back(std::get<0>(edge_index));
+
+    } else {
+        if (std::get<2>(edge_index)) {
+            unpackEdge(edge->m_child_1, path);
+            unpackEdge(edge->m_child_2, path);
+        } else {
+            unpackEdge(edge->m_child_2, path);
+            unpackEdge(edge->m_child_1, path);
         }
     }
 }
@@ -697,6 +809,20 @@ int Graph::maxLabelSize() {
     return max_label_size;
 }
 
+int Graph::getNearestNode(double latitude, double longitude) {
+    int nearest_node = -1;
+    double min_distance = std::numeric_limits<double>::max();
+
+    for (int i = 0; i < m_num_nodes; ++i) {
+        double distance = greatCircleDistance(latitude, longitude, m_node_coords[i].first, m_node_coords[i].second);
+        if (distance < min_distance) {
+            min_distance = distance;
+            nearest_node = i;
+        }
+    }
+    return nearest_node;
+}
+
 std::vector<int> intersection(std::vector<int> v1, std::vector<int> v2) {
     std::vector<int> v3;
 
@@ -733,7 +859,7 @@ void Graph::createReverseGraphCH() {
                 int new_source = e.m_target;
                 e.m_target = i;
                 m_reverse_graph_contr[new_source].push_back(e);
-                m_graph_contr[i].erase(iter);
+                iter = m_graph_contr[i].erase(iter);
             } else {
                 iter++;
             }
@@ -755,17 +881,20 @@ void Graph::createReverseGraphCH() {
         for (int j = 0; j < m_graph_contr[i].size(); ++j) {
             const ContractionEdge& e = m_graph_contr[i][j];
             if (e.isShortcut()) {
-                Edge* child_1 = nullptr;
-                for (int k = 0; k < m_graph[i].size(); ++k) {
-                    if (m_graph[i][k].m_target == e.m_contraction_node) {
-                        child_1 = &m_graph[i][k];
+                // child 1 must be in the downward graph, while child 2 must be in the upward graph
+
+                std::tuple<int, int, bool> child_1;
+                for (int k = 0; k < m_reverse_graph[e.m_contraction_node].size(); ++k) {
+                    if (m_reverse_graph[e.m_contraction_node][k].m_target == i) {
+                        child_1 = std::make_tuple(e.m_contraction_node, k, false);
                         break;
                     }
                 }
-                Edge* child_2 = nullptr;
+
+                std::tuple<int, int, bool> child_2;
                 for (int k = 0; k < m_graph[e.m_contraction_node].size(); ++k) {
                     if (m_graph[e.m_contraction_node][k].m_target == e.m_target) {
-                        child_2 = &m_graph[e.m_contraction_node][k];
+                        child_2 = std::make_tuple(e.m_contraction_node, k, true);
                         break;
                     }
                 }
@@ -777,17 +906,19 @@ void Graph::createReverseGraphCH() {
         for (int j = 0; j < m_reverse_graph_contr[i].size(); ++j) {
             const ContractionEdge& e = m_reverse_graph_contr[i][j];
             if (e.isShortcut()) {
-                Edge* child_1 = nullptr;
-                for (int k = 0; k < m_reverse_graph[i].size(); ++k) {
-                    if (m_reverse_graph[i][k].m_target == e.m_contraction_node) {
-                        child_1 = &m_reverse_graph[i][k];
+                // child 1 must be in the upward graph, while child 2 must be in the downward graph
+                std::tuple<int, int, bool> child_1;
+                for (int k = 0; k < m_graph[e.m_contraction_node].size(); ++k) {
+                    if (m_graph[e.m_contraction_node][k].m_target == i) {
+                        child_1 = std::make_tuple(e.m_contraction_node, k, true);
                         break;
                     }
                 }
-                Edge* child_2 = nullptr;
+
+                std::tuple<int, int, bool> child_2;
                 for (int k = 0; k < m_reverse_graph[e.m_contraction_node].size(); ++k) {
                     if (m_reverse_graph[e.m_contraction_node][k].m_target == e.m_target) {
-                        child_2 = &m_reverse_graph[e.m_contraction_node][k];
+                        child_2 = std::make_tuple(e.m_contraction_node, k, false);
                         break;
                     }
                 }

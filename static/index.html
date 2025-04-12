@@ -29,7 +29,7 @@
             crossorigin=""
         ></script>
     </head>
-    <body onload="mapInit()">
+    <body onload="mapInit(), init()">
         <div class="p-10">
             <h1
                 class="mb-6 text-4xl font-extrabold leading-none tracking-tight text-gray-900"
@@ -44,48 +44,47 @@
                     <div id="coordinates" class="mb-4 md:mb-0">
                         <p>
                             <strong>Start Point:</strong>
-                            <span id="marker1-coords"></span>
+                            <span id="start-coords"></span>
                         </p>
                         <p>
                             <strong>End Point:</strong>
-                            <span id="marker2-coords"></span>
+                            <span id="end-coords"></span>
                         </p>
                     </div>
 
-                    <!-- Buttons Section -->
                     <div class="space-x-4">
                         <button
-                            id="start-button"
+                            id="simple-dijkstra"
                             type="button"
-                            onclick="graphRequest()"
+                            onclick="dijkstraQuery()"
                             class="cursor-pointer bg-gray-600 text-gray-100 hover:bg-gray-700 hover:scale-105 active:bg-gray-800 active:scale-95 px-8 py-3 rounded-xl shadow-md transition duration-300"
                         >
-                            Start Computation
-                        </button>
-                        <button
-                            id="clear-button"
-                            type="button"
-                            onclick="clearTable()"
-                            class="cursor-pointer bg-gray-600 text-gray-100 hover:bg-gray-700 hover:scale-105 active:bg-gray-800 active:scale-95 px-8 py-3 rounded-xl shadow-md transition duration-300"
-                        >
-                            Clear Count
+                            Route with Dijkstra
                         </button>
 
                         <button
-                            id="btn-additional1"
+                            id="complex-ch"
                             type="button"
-                            onclick="additionalFunction1()"
+                            onclick="chQuery()"
                             class="cursor-pointer bg-gray-600 text-gray-100 hover:bg-gray-700 hover:scale-105 active:bg-gray-800 active:scale-95 px-8 py-3 rounded-xl shadow-md transition duration-300"
                         >
-                            Additional 1
+                            Route with CH
                         </button>
                         <button
-                            id="btn-additional2"
+                            id="complex-hub-label"
                             type="button"
                             onclick="additionalFunction2()"
                             class="cursor-pointer bg-gray-600 text-gray-100 hover:bg-gray-700 hover:scale-105 active:bg-gray-800 active:scale-95 px-8 py-3 rounded-xl shadow-md transition duration-300"
                         >
-                            Additional 2
+                            Route with Hub Labels
+                        </button>
+                        <button
+                            id="clear"
+                            type="button"
+                            onclick="clearPath()"
+                            class="cursor-pointer bg-gray-600 text-gray-100 hover:bg-gray-700 hover:scale-105 active:bg-gray-800 active:scale-95 px-8 py-3 rounded-xl shadow-md transition duration-300"
+                        >
+                            Clear Path
                         </button>
                     </div>
                 </div>

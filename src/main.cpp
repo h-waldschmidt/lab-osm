@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "graph.h"
+#include "helper.h"
 
 using NodeMap = std::unordered_map<uint64_t, std::pair<double, double>>;
 using WayList = std::unordered_map<uint64_t, std::vector<uint64_t>>;
@@ -162,7 +163,183 @@ int main(int argc, char* argv[]) {
 
 #include "httplib.h"
 
-int main() {
+void simpleServer(const std::string& fmi_file) {
+    labosm::Graph g(fmi_file, false, 1, labosm::Heuristic::IN_OUT);
+
+    labosm::DijkstraQueryData data(g.getNumNodes());
+
+    httplib::Server svr;
+    // first the static content: website etc.
+    svr.set_mount_point("/", "static");
+
+    svr.Get(R"(/api/)", [&](const httplib::Request& req, httplib::Response& res) {
+        res.set_content(R"({"type": "simple"})", "application/json");
+    });
+
+    // get the nearest node for given coords
+    svr.Get(R"(/api/nearest_node)", [&](const httplib::Request& req, httplib::Response& res) {
+        if (req.has_param("lat") && req.has_param("lon")) {
+            double lat = std::stod(req.get_param_value("lat"));
+            double lon = std::stod(req.get_param_value("lon"));
+            int nearest_node = g.getNearestNode(lat, lon);
+            std::pair<double, double> coords = g.getNodeCoords(nearest_node);
+            res.status = 200;
+            res.set_content(R"({"node": )" + std::to_string(nearest_node) + R"(,"lat": )" +
+                                std::to_string(coords.first) + R"(,"lon": )" + std::to_string(coords.second) + R"(})",
+                            "application/json");
+        } else {
+            res.status = 400;
+            res.set_content(R"({"error": "Missing lat or lon parameter"})", "application/json");
+        }
+    });
+
+    // dijkstra query
+    svr.Get(R"(/api/dijkstra)", [&](const httplib::Request& req, httplib::Response& res) {
+        if (req.has_param("start") && req.has_param("end")) {
+            int start = std::stoi(req.get_param_value("start"));
+            int end = std::stoi(req.get_param_value("end"));
+            data.m_start = start;
+            data.m_end = end;
+            g.dijkstraQuery(data);
+            g.dijkstraExtractPath(data);
+            res.status = 200;
+
+            std::vector<std::pair<double, double>> coords;
+            for (int node : data.m_path) {
+                coords.push_back(g.getNodeCoords(node));
+            }
+            std::string path_str = "{\"type\": \"LineString\", \"coordinates\": [";
+            for (size_t i = 0; i < coords.size(); ++i) {
+                if (i > 0) path_str += ",";
+                path_str += "[" + std::to_string(coords[i].first) + "," + std::to_string(coords[i].second) + "]";
+            }
+            path_str += "]}";
+
+            std::cout << "Distance: " << data.m_distance << std::endl;
+
+            res.set_content(R"({"distance": )" + std::to_string(data.m_distance) + R"(,"path": )" + path_str + R"(})",
+                            "application/json");
+        } else {
+            res.status = 400;
+            res.set_content(R"({"error": "Missing start or end parameter"})", "application/json");
+        }
+    });
+
+    std::cout << "Server started on port 8080" << std::endl;
+    svr.listen("0.0.0.0", 8080);
+}
+
+void advancedServer(const std::string& fmi_file) {
+    labosm::Graph g(fmi_file, true, 4, labosm::Heuristic::IN_OUT);
+    labosm::QueryData data(g.getNumNodes());
+    httplib::Server svr;
+    // first the static content: website etc.
+    svr.set_mount_point("/", "static");
+
+    svr.Get(R"(/api/)", [&](const httplib::Request& req, httplib::Response& res) {
+        res.set_content(R"({"type": "complex"})", "application/json");
+    });
+
+    // get the nearest node for given coords
+    svr.Get(R"(/api/nearest_node)", [&](const httplib::Request& req, httplib::Response& res) {
+        if (req.has_param("lat") && req.has_param("lon")) {
+            double lat = std::stod(req.get_param_value("lat"));
+            double lon = std::stod(req.get_param_value("lon"));
+            int nearest_node = g.getNearestNode(lat, lon);
+            std::pair<double, double> coords = g.getNodeCoords(nearest_node);
+            res.status = 200;
+            res.set_content(R"({"node": )" + std::to_string(nearest_node) + R"(,"lat": )" +
+                                std::to_string(coords.first) + R"(,"lon": )" + std::to_string(coords.second) + R"(})",
+                            "application/json");
+        } else {
+            res.status = 400;
+            res.set_content(R"({"error": "Missing lat or lon parameter"})", "application/json");
+        }
+    });
+
+    // CH query
+    svr.Get(R"(/api/ch)", [&](const httplib::Request& req, httplib::Response& res) {
+        if (req.has_param("start") && req.has_param("end")) {
+            int start = std::stoi(req.get_param_value("start"));
+            int end = std::stoi(req.get_param_value("end"));
+            data.m_start = start;
+            data.m_end = end;
+            auto start_time = std::chrono::steady_clock::now();
+            g.contractionHierarchyQuery(data);
+            auto end_time = std::chrono::steady_clock::now();
+            std::cout << "CH Query Time: "
+                      << std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time).count()
+                      << std::endl;
+
+            start_time = std::chrono::steady_clock::now();
+            g.contractionHierarchyExtractPath(data);
+            end_time = std::chrono::steady_clock::now();
+            std::cout << "CH Path Extraction Time: "
+                      << std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time).count()
+                      << std::endl;
+
+            res.status = 200;
+
+            std::vector<std::pair<double, double>> coords;
+            for (int node : data.m_shortest_path) {
+                coords.push_back(g.getNodeCoords(node));
+            }
+
+            std::cout << "Start: " << data.m_start << std::endl;
+            std::cout << "End: " << data.m_end << std::endl;
+            std::cout << "Distance: " << data.m_distance << std::endl;
+            std::cout << "Meeting Node: " << data.m_meeting_node << std::endl;
+
+            std::string path_str = "{\"type\": \"LineString\", \"coordinates\": [";
+            for (size_t i = 0; i < coords.size(); ++i) {
+                if (i > 0) path_str += ",";
+                path_str += "[" + std::to_string(coords[i].first) + "," + std::to_string(coords[i].second) + "]";
+            }
+            path_str += "]}";
+
+            std::cout << "Distance: " << data.m_distance << std::endl;
+
+            res.set_content(R"({"distance": )" + std::to_string(data.m_distance) + R"(,"path": )" + path_str + R"(})",
+                            "application/json");
+        } else {
+            res.status = 400;
+            res.set_content(R"({"error": "Missing start or end parameter"})", "application/json");
+        }
+    });
+
+    std::cout << "Server started on port 8080" << std::endl;
+    svr.listen("0.0.0.0", 8080);
+}
+
+int main(int argc, char* argv[]) {
+    if (argc <= 2) {
+        std::cout << "Usage ./labosm <mode> <args>\n" << std::endl;
+        std::cout << "Supported modes: osmtogeojson osmtofmi simpleserver advancedserver\n" << std::endl;
+        std::cout << "Example: ./labosm osmtogeojson input.osm.pbf output.geojson" << std::endl;
+        std::cout << "Example: ./labosm osmtofmi input.osm.pbf output.fmi\n" << std::endl;
+        std::cout << "Example: ./labosm simpleserver input.fmi" << std::endl;
+        std::cout << "Simple Server only supports dijkstra for routing\n" << std::endl;
+        std::cout << "Example: ./labosm advancedserver input.fmi" << std::endl;
+        std::cerr << "Advanced Server supports CH and Hub Labeling for routing" << std::endl;
+        return 1;
+    }
+
+    if (argv[1] == std::string("simpleserver")) {
+        if (argc != 3) {
+            std::cerr << "Usage: ./labosm simpleserver input.fmi" << std::endl;
+            return 1;
+        }
+        simpleServer(argv[2]);
+        return 0;
+    } else if (argv[1] == std::string("advancedserver")) {
+        if (argc != 3) {
+            std::cerr << "Usage: ./labosm advancedserver input.fmi" << std::endl;
+            return 1;
+        }
+        advancedServer(argv[2]);
+        return 0;
+    }
+
     labosm::Graph g("../stgtregbz.fmi", true, 8, labosm::Heuristic::MIXED);
 
     // int dist = labosm::Graph::dijkstraQuery(g.getGraph(), 377371, 754742);
