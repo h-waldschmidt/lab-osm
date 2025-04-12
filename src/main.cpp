@@ -7,16 +7,39 @@
 #include <osmium/io/any_input.hpp>
 #include <osmium/osm/location.hpp>
 #include <osmium/visitor.hpp>
+#include <regex>
 #include <string>
 #include <unordered_map>
 #include <utility>
 #include <vector>
+
+#include "graph.h"
 
 using NodeMap = std::unordered_map<uint64_t, std::pair<double, double>>;
 using WayList = std::unordered_map<uint64_t, std::vector<uint64_t>>;
 
 NodeMap coastline_nodes;
 WayList coastline_ways;
+
+int parseLine(std::string line) {
+    return stoi(std::regex_replace(line, std::regex("[^0-9]*([0-9]+).*"), std::string("$1")));
+}
+
+// https://stackoverflow.com/questions/63166/how-to-determine-cpu-and-memory-consumption-from-inside-a-process
+int getMemoryUsage() {  // Note: this value is in KB!
+    int result = -1;
+    std::ifstream file("/proc/self/status");
+    std::string line;
+    while (getline(file, line)) {
+        if (line.find("VmSize") != std::string::npos) {
+            result = parseLine(line);
+            break;
+        }
+    }
+
+    file.close();
+    return result;
+}
 
 class CoastlineHandler : public osmium::handler::Handler {
    public:
@@ -85,7 +108,7 @@ void merge_ways() {
         old_size = coastline_ways.size();
     }
 }
-
+/*
 int main(int argc, char* argv[]) {
     if (argc != 3) {
         std::cerr << "Usage: extract_coastlines input.osm.pbf output.geojson\n";
@@ -95,7 +118,7 @@ int main(int argc, char* argv[]) {
     const char* input_filename = argv[1];
     const char* output_filename = argv[2];
 
-    auto start_reading = std::chrono::high_resolution_clock::now();
+    auto start_reading = std::chrono::steady_clock::now();
 
     osmium::io::Reader reader{input_filename, osmium::osm_entity_bits::node | osmium::osm_entity_bits::way};
 
@@ -108,18 +131,17 @@ int main(int argc, char* argv[]) {
 
     osmium::apply(reader, location_handler, handler);
     reader.close();
-    auto end_reading = std::chrono::high_resolution_clock::now();
+    auto end_reading = std::chrono::steady_clock::now();
 
     std::cout << "Reading time: "
               << std::chrono::duration_cast<std::chrono::milliseconds>(end_reading - start_reading).count() << " ms\n";
 
-    auto start_merging = std::chrono::high_resolution_clock::now();
+    auto start_merging = std::chrono::steady_clock::now();
     merge_ways();
-    auto end_merging = std::chrono::high_resolution_clock::now();
+    auto end_merging = std::chrono::steady_clock::now();
     std::cout << "Merging time: "
               << std::chrono::duration_cast<std::chrono::milliseconds>(end_merging - start_merging).count() << " ms\n";
 
-    /*
     // find the longest array
     size_t max_size = 0;
     std::vector<uint64_t> longest_way;
@@ -131,9 +153,61 @@ int main(int argc, char* argv[]) {
     }
     coastline_ways.clear();
     coastline_ways[longest_way.front()] = longest_way;
-    */
 
     write_geojson(output_filename, coastline_nodes, coastline_ways);
 
+    return 0;
+}
+*/
+
+#include "graph.h"
+
+int main() {
+    labosm::Graph g("../stgtregbz.fmi", true, 8, labosm::Heuristic::MIXED);
+
+    // int dist = labosm::Graph::dijkstraQuery(g.getGraph(), 377371, 754742);
+    // std::cout << "Distance: " << dist << std::endl;
+
+    {
+        labosm::Graph test("../stgtregbz.fmi", false, 1, labosm::Heuristic::IN_OUT);
+        labosm::DijkstraQueryData data(test.getNumNodes());
+        data.m_start = 377371;
+        data.m_end = 754742;
+        auto start = std::chrono::steady_clock::now();
+        test.dijkstraQuery(data);
+        auto end = std::chrono::steady_clock::now();
+        std::cout << "Time: " << std::chrono::duration_cast<std::chrono::microseconds>(end - start).count()
+                  << std::endl;
+        std::cout << "Distance: " << data.m_distance << std::endl;
+    }
+
+    {
+        labosm::QueryData bd_data(g.getNumNodes());
+        bd_data.m_start = 377371;
+        bd_data.m_end = 754742;
+        auto start = std::chrono::steady_clock::now();
+        g.contractionHierarchyQuery(bd_data);
+        auto end = std::chrono::steady_clock::now();
+        std::cout << "Time: " << std::chrono::duration_cast<std::chrono::microseconds>(end - start).count()
+                  << std::endl;
+        std::cout << "Distance: " << bd_data.m_distance << std::endl;
+        std::cout << bd_data.m_meeting_node << std::endl;
+        // g.bidirectionalDijkstraGetPath(bd_data);
+    }
+
+    int threshold = 40000;
+
+    g.createHubLabelsWithoutIS();
+    {
+        labosm::QueryData bd_data(g.getNumNodes());
+        bd_data.m_start = 377371;
+        bd_data.m_end = 754742;
+        g.hubLabelQuery(bd_data);
+        std::cout << "Distance: " << bd_data.m_distance << std::endl;
+        std::cout << bd_data.m_meeting_node << std::endl;
+    }
+
+    std::cout << "Average Label size: " << g.averageLabelSize() << std::endl;
+    std::cout << "Max Label size: " << g.maxLabelSize() << std::endl;
     return 0;
 }

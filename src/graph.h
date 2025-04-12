@@ -1,5 +1,340 @@
 #pragma once
 
+#include <omp.h>
+#include <stdint.h>
+
+#include <cstddef>
+#include <limits>
+#include <string>
+#include <vector>
+
 namespace labosm {
-class Graph {};
+struct Edge {
+    int m_target;  // corresponds to index of node in graph data structure
+    int m_cost;
+    Edge* m_child_1;  // if child edges aren't -1 that means this is a shortcut edge (see Contraction Hierarchies)
+    Edge* m_child_2;
+    Edge(int target, int cost) : m_target(target), m_cost(cost), m_child_1(nullptr), m_child_2(nullptr) {}
+    Edge(int target, int cost, Edge* child_1, Edge* child_2)
+        : m_target(target), m_cost(cost), m_child_1(child_1), m_child_2(child_2) {}
+
+    bool isShortcut() const { return (m_child_1 != nullptr) && (m_child_2 != nullptr); }
+};
+
+// Edge struct only used when creating CH
+struct ContractionEdge {
+    int m_target;  // corresponds to index of node in graph data structure
+    int m_cost;
+    // data used to find the underlying later on
+    int m_contraction_node;
+    int m_num_underlying_arcs;  // used for the mixed heuristic
+    ContractionEdge(int target, int cost, int contraction_node, int num_underlying_arcs)
+        : m_target(target),
+          m_cost(cost),
+          m_contraction_node(contraction_node),
+          m_num_underlying_arcs(num_underlying_arcs) {}
+    ContractionEdge(int target, int cost) : m_target(target), m_cost(cost), m_contraction_node(-1) {}
+
+    bool isShortcut() const { return m_contraction_node != -1; }
+};
+
+/**
+ * @brief Used for calculating the CH
+ *
+ */
+struct ContractionData {
+    std::vector<bool> m_outgoing;
+    std::vector<int> m_reset_outgoing;
+    std::vector<bool> m_visited;
+    std::vector<int> m_reset_visited;
+    std::vector<int> m_distances;
+    std::vector<int> m_reset_distances;
+    std::vector<int> m_num_contracted_neighbors;
+    std::vector<std::pair<int, ContractionEdge>> m_shortcuts_fwd;
+    std::vector<std::pair<int, ContractionEdge>> m_shortcuts_bwd;
+
+    ContractionData(int num_nodes)
+        : m_outgoing(num_nodes, false),
+          m_visited(num_nodes, false),
+          m_distances(num_nodes, std::numeric_limits<int>::max()) {}
+    ContractionData() = default;
+};
+
+// define dijkstra query data for efficient memory reuse for multiple queries
+struct DijkstraQueryData {
+    int m_start;
+    int m_end;
+    int m_distance = std::numeric_limits<int>::max();
+    std::vector<int> m_distances;
+    std::vector<int> m_prev;
+    std::vector<int> m_path;
+
+    int num_pq_pops = 0;
+
+    // keep track of the nodes that need to be reset
+    // cheaper than iterating over the whole vector
+    std::vector<int> m_reset_nodes;
+
+    DijkstraQueryData(int num_nodes) : m_distances(num_nodes, std::numeric_limits<int>::max()), m_prev(num_nodes, -1) {}
+
+    void reset() {
+        m_distance = std::numeric_limits<int>::max();
+        for (int node : m_reset_nodes) {
+            m_distances[node] = std::numeric_limits<int>::max();
+            m_prev[node] = -1;
+        }
+        num_pq_pops = 0;
+        m_reset_nodes.clear();
+        m_path.clear();
+    }
+
+    bool needReset() { return !m_reset_nodes.empty(); }
+};
+
+/**
+ * @brief Used for distances and path queries.
+ * Pre defining all data allows for many queries at a time without allocating/deallocating a huge amount of memory
+ *
+ */
+struct QueryData {
+    int m_start;
+    int m_end;
+    int m_meeting_node = -1;
+    int m_distance = std::numeric_limits<int>::max();
+    std::vector<int> m_distances_fwd;
+    std::vector<int> m_distances_bwd;
+
+    std::vector<int> m_fwd_prev;
+    std::vector<int> m_bwd_prev;
+    std::vector<int> m_shortest_path;
+
+    std::vector<bool> m_visited_fwd;
+    std::vector<bool> m_visited_bwd;
+
+    std::vector<int> m_reset_nodes_fwd;
+    std::vector<int> m_reset_nodes_bwd;
+
+    int num_pq_pops = 0;
+
+    QueryData(int num_nodes)
+        : m_distances_fwd(num_nodes, std::numeric_limits<int>::max()),
+          m_distances_bwd(num_nodes, std::numeric_limits<int>::max()),
+          m_fwd_prev(num_nodes, -1),
+          m_bwd_prev(num_nodes, -1),
+          m_visited_fwd(num_nodes, false),
+          m_visited_bwd(num_nodes, false) {}
+
+    void reset() {
+        m_distance = std::numeric_limits<int>::max();
+        m_meeting_node = -1;
+        for (int node : m_reset_nodes_fwd) {
+            m_distances_fwd[node] = std::numeric_limits<int>::max();
+            m_fwd_prev[node] = -1;
+            m_visited_fwd[node] = false;
+        }
+        for (int node : m_reset_nodes_bwd) {
+            m_distances_bwd[node] = std::numeric_limits<int>::max();
+            m_bwd_prev[node] = -1;
+            m_visited_bwd[node] = false;
+        }
+        num_pq_pops = 0;
+        m_reset_nodes_fwd.clear();
+        m_reset_nodes_bwd.clear();
+        m_shortest_path.clear();
+    }
+    bool needReset() const { return !m_reset_nodes_fwd.empty() || !m_reset_nodes_bwd.empty(); }
+};
+
+/**
+ * @brief Defines which heuristic is used for calculating contraction hierarchies
+ * IN_OUT and EDGE_DIFFERENCE are baseline heuristics.
+ * WEIGHTED_COST is the preferred heuristic when not using IS.
+ * MIXED is preferred when using IS.
+ */
+enum Heuristic { IN_OUT = 0, EDGE_DIFFERENCE = 1, WEIGHTED_COST = 2, MIXED = 3 };
+
+/**
+ * @brief Stores graph data structure and allows for various operations on graph data structure.
+ *
+ */
+class Graph {
+   public:
+    /**
+     * @brief Construct a new Graph object independent sets (IS)
+     *
+     * @param path          specifies location of graph
+     * @param read_mode     specifies if CH is pre-calculated and stored in graph-file
+     * @param ch_available  specifies if CH should be used
+     * @param ch_heuristic  specifies which heuristic to use
+     * @param dist_mode     specifies whether to use travel time or distance in meter metric
+     */
+    Graph(const std::string& path, bool ch_available, Heuristic ch_heuristic);
+
+    // constructor with independent sets (IS)
+    /**
+     * @brief Construct a new Graph object with independent sets (IS)
+     *
+     * @param path          specifies location of graph
+     * @param read_mode     specifies if CH is pre-calculated and stored in graph-file
+     * @param ch_available  specifies if CH should be used
+     * @param num_threads   specifies the number of threads to use in createHubLabelsWithIS and createCHwithIS functions
+     * @param ch_heuristic  specifies which heuristic to use
+     * @param dist_mode     specifies whether to use travel time or distance in meter metric
+     */
+    Graph(const std::string& path, bool ch_available, int num_threads, Heuristic ch_heuristic);
+
+    Graph() = default;
+    ~Graph() = default;
+
+    /**
+     * @brief Conventional implementation of the dijkstra algorithm
+     * Should only be used to compare query times to other methods.
+     *
+     * @param graph since the function is static the graph vector must be passed
+     * @param start node
+     * @param end node
+     * @return distances between start and end
+     */
+    void dijkstraQuery(DijkstraQueryData& data);
+
+    /**
+     * @brief Extracts path from QueryData.
+     * dijkstraQuery function with m_path_needed = true needs to be called beforehand.
+     *
+     * @param data
+     */
+    void bidirectionalDijkstraGetPath(QueryData& data);
+
+    /**
+     * @brief Works similarly to bidirectionalDijkstraQuery.
+     *  Additionally uses CH information to reduce query time.
+     *
+     * @param data set m_path_needed = true to make path extractable
+     */
+    void contractionHierarchyQuery(QueryData& data);
+
+    /**
+     * @brief Create a hub labeling when not using IS for CH.
+     *
+     * @param threshold used for pruned hub labeling
+     */
+    void createHubLabelsWithoutIS(int threshold = std::numeric_limits<int>::max());
+
+    /**
+     * @brief Create a hub labeling when using IS for CH.
+     * Implementation uses OpenMP for parallelization with specified number of threads.
+     *
+     * @param threshold used for pruned hub labeling
+     */
+    void createHubLabelsWithIS(int threshold = std::numeric_limits<int>::max());
+
+    /**
+     * @brief Calculates distance using the created hub labeling.
+     * Make sure hub labeling has been created before using this function.
+     *
+     * @param data
+     */
+    void hubLabelQuery(QueryData& data);
+
+    double averageLabelSize();
+
+    int maxLabelSize();
+
+    std::vector<std::vector<Edge>>& getGraph() { return m_graph; }
+
+    int getNumNodes() { return m_num_nodes; }
+
+    void setNumThreads(int num_of_threads) { m_num_threads = num_of_threads; }
+
+    /**
+     * @brief Clears all the hub label data from memory.
+     * Useful when ESC has been extracted from hub labeling and hub labeling is no longer required.
+     *
+     */
+    void clearHubLabel() {
+        std::vector<uint32_t>().swap(m_fwd_indices);
+        std::vector<uint32_t>().swap(m_bwd_indices);
+        std::vector<std::pair<int, int>>().swap(m_fwd_hub_labels);
+        std::vector<std::pair<int, int>>().swap(m_bwd_hub_labels);
+    }
+
+   private:
+    bool m_ch_available;  // ch/CH = Contraction Hierarchy
+    int m_num_nodes;
+    bool m_is;          // determines whether IS are used
+    int m_num_threads;  // sets threads when using independent sets (IS)
+
+    std::vector<std::vector<Edge>> m_graph;
+    std::vector<std::vector<Edge>> m_reverse_graph;
+    std::vector<int> m_node_level;
+    std::vector<std::pair<double, double>> m_node_coords;
+
+    // only used to share state when calculating CH
+    std::vector<ContractionData> m_contr_data;
+    // copies of the graph with additional data, only used when creating CH
+    std::vector<std::vector<ContractionEdge>> m_graph_contr;
+    std::vector<std::vector<ContractionEdge>> m_reverse_graph_contr;
+
+    std::vector<int> m_level_indices_sorted;
+    std::vector<int> m_node_indices;
+    std::vector<uint32_t> m_fwd_indices;
+    std::vector<uint32_t> m_bwd_indices;
+    std::vector<std::pair<int, int>> m_fwd_hub_labels;
+    std::vector<std::pair<int, int>> m_bwd_hub_labels;
+
+    void readGraph(const std::string& path);
+
+    void createReverseGraph();
+
+    void createReverseGraphCH();
+
+    void createReverseGraphNormal();
+
+    /**
+     * @brief Calculates the distance of two given points based on the Haversine Formula
+     *
+     * @param lat_1
+     * @param lon_1
+     * @param lat_2
+     * @param lon_2
+     * @return distance between the points in meter
+     */
+    int greatCircleDistance(double lat_1, double lon_1, double lat_2, double lon_2);
+
+    /**
+     * @brief Calculates hierarchy and adds shortcuts to graph without using independent sets.
+     * This means that each node has a distinct level/hierarchy value.
+     *
+     * @param heuristic
+     */
+    void createCHwithoutIS(Heuristic heuristic);
+
+    /**
+     * @brief Calculates hierarchy and adds shortcuts to graph without using independent sets.
+     * This means that many nodes have the same level/hierarchy value.
+     *
+     * @param heuristic
+     */
+    void createCHwithIS(Heuristic heuristic);
+
+    void createContractionGraphs();
+
+    int inOutProductHeuristic(std::vector<bool>& contracted, int node);
+
+    int edgeDifferenceHeuristic(std::vector<bool>& contracted, int node);
+
+    int weightedCostHeuristic(std::vector<bool>& contracted, int node);
+
+    int mixedHeuristic(std::vector<bool>& contracted, int node, int cur_level);
+
+    void contractNode(std::vector<bool>& contracted, int contracted_node, int thread_num);
+
+    void contractionDijkstra(int start, int contracted_node, std::vector<bool>& contracted, int num_outgoing,
+                             int max_distance, int thread_num);
+
+    int simplifiedHubLabelQuery(std::vector<std::pair<int, int>>& fwd_labels, int node);
+
+    int simplifiedHubLabelQuery(int node, std::vector<std::pair<int, int>>& bwd_labels);
+};
+
 }  // namespace labosm
