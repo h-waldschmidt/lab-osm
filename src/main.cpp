@@ -247,8 +247,11 @@ void simpleServer(const std::string& fmi_file) {
 }
 
 void advancedServer(const std::string& fmi_file) {
-    labosm::Graph g(fmi_file, true, 4, labosm::Heuristic::IN_OUT);
+    labosm::Graph g(fmi_file, true, 4, labosm::Heuristic::MIXED);
     labosm::QueryData data(g.getNumNodes());
+
+    g.createHubLabelsWithIS();
+
     httplib::Server svr;
     // first the static content: website etc.
     svr.set_mount_point("/", "static");
@@ -299,9 +302,74 @@ void advancedServer(const std::string& fmi_file) {
             }
 
             start_time = std::chrono::steady_clock::now();
+            // TODO: There still seems to be a bug in the path extraction
+            // It gets stuck at one of the while loops
             g.contractionHierarchyExtractPath(data);
             end_time = std::chrono::steady_clock::now();
             std::cout << "CH Path Extraction Time: "
+                      << std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time).count()
+                      << std::endl;
+
+            res.status = 200;
+
+            std::vector<std::pair<double, double>> coords;
+            for (int node : data.m_shortest_path) {
+                coords.push_back(g.getNodeCoords(node));
+            }
+
+            /*
+            // TODO: Make Hub label query just for testing
+            g.hubLabelQuery(data);
+            std::cout << "Hub Label Distance: " << data.m_distance << std::endl;
+            std::cout << "Hub Label Meeting Node: " << data.m_meeting_node << std::endl;
+            */
+            std::string path_str = "{\"type\": \"LineString\", \"coordinates\": [";
+            for (size_t i = 0; i < coords.size(); ++i) {
+                if (i > 0) path_str += ",";
+                path_str += "[" + std::to_string(coords[i].first) + "," + std::to_string(coords[i].second) + "]";
+            }
+            path_str += "]}";
+
+            std::cout << "Distance: " << data.m_distance << std::endl;
+
+            res.set_content(R"({"distance": )" + std::to_string(data.m_distance) + R"(,"path": )" + path_str + R"(})",
+                            "application/json");
+        } else {
+            res.status = 400;
+            res.set_content(R"({"error": "Missing start or end parameter"})", "application/json");
+        }
+    });
+
+    // Hub Label Query
+    svr.Get(R"(/api/hub-label)", [&](const httplib::Request& req, httplib::Response& res) {
+        if (req.has_param("start") && req.has_param("end")) {
+            int start = std::stoi(req.get_param_value("start"));
+            int end = std::stoi(req.get_param_value("end"));
+            data.m_start = start;
+            data.m_end = end;
+            auto start_time = std::chrono::steady_clock::now();
+            auto hub_indices = g.hubLabelQuery(data);
+            auto end_time = std::chrono::steady_clock::now();
+            std::cout << "Hub Label Query Time: "
+                      << std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time).count()
+                      << std::endl;
+            std::cout << "Start: " << data.m_start << std::endl;
+            std::cout << "End: " << data.m_end << std::endl;
+            std::cout << "Distance: " << data.m_distance << std::endl;
+            std::cout << "Meeting Node: " << data.m_meeting_node << std::endl;
+
+            if (data.m_meeting_node == -1) {
+                res.status = 400;
+                res.set_content(R"({"error": "No path found"})", "application/json");
+                return;
+            }
+
+            start_time = std::chrono::steady_clock::now();
+            // TODO: There still seems to be a bug in the path extraction
+            // It gets stuck at one of the while loops
+            g.hubLabelExtractPath(data, hub_indices);
+            end_time = std::chrono::steady_clock::now();
+            std::cout << "Hub Label Path Extraction Time: "
                       << std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time).count()
                       << std::endl;
 
@@ -318,8 +386,6 @@ void advancedServer(const std::string& fmi_file) {
                 path_str += "[" + std::to_string(coords[i].first) + "," + std::to_string(coords[i].second) + "]";
             }
             path_str += "]}";
-
-            std::cout << "Distance: " << data.m_distance << std::endl;
 
             res.set_content(R"({"distance": )" + std::to_string(data.m_distance) + R"(,"path": )" + path_str + R"(})",
                             "application/json");

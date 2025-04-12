@@ -77,18 +77,14 @@ class Graph {
 
     /**
      * @brief Create a hub labeling when not using IS for CH.
-     *
-     * @param threshold used for pruned hub labeling
      */
-    void createHubLabelsWithoutIS(int threshold = std::numeric_limits<int>::max());
+    void createHubLabelsWithoutIS();
 
     /**
      * @brief Create a hub labeling when using IS for CH.
      * Implementation uses OpenMP for parallelization with specified number of threads.
-     *
-     * @param threshold used for pruned hub labeling
      */
-    void createHubLabelsWithIS(int threshold = std::numeric_limits<int>::max());
+    void createHubLabelsWithIS();
 
     /**
      * @brief Calculates distance using the created hub labeling.
@@ -96,7 +92,9 @@ class Graph {
      *
      * @param data
      */
-    void hubLabelQuery(QueryData& data);
+    std::pair<uint32_t, uint32_t> hubLabelQuery(QueryData& data);
+
+    void hubLabelExtractPath(QueryData& data, std::pair<int, int> hub_indices);
 
     double averageLabelSize();
 
@@ -118,8 +116,8 @@ class Graph {
     void clearHubLabel() {
         std::vector<uint32_t>().swap(m_fwd_indices);
         std::vector<uint32_t>().swap(m_bwd_indices);
-        std::vector<std::pair<int, int>>().swap(m_fwd_hub_labels);
-        std::vector<std::pair<int, int>>().swap(m_bwd_hub_labels);
+        std::vector<std::tuple<int, int, int, int>>().swap(m_fwd_hub_labels);
+        std::vector<std::tuple<int, int, int, int>>().swap(m_bwd_hub_labels);
     }
 
    private:
@@ -143,8 +141,10 @@ class Graph {
     std::vector<int> m_node_indices;
     std::vector<uint32_t> m_fwd_indices;
     std::vector<uint32_t> m_bwd_indices;
-    std::vector<std::pair<int, int>> m_fwd_hub_labels;
-    std::vector<std::pair<int, int>> m_bwd_hub_labels;
+    // first is hub node, second is distance to the hub node, third is edge_index in the graph (edge to that hub node),
+    // fourth is the index to the original hub
+    std::vector<std::tuple<int, int, int, int>> m_fwd_hub_labels;
+    std::vector<std::tuple<int, int, int, int>> m_bwd_hub_labels;
 
     void readGraph(const std::string& path);
 
@@ -196,9 +196,9 @@ class Graph {
     void contractionDijkstra(int start, int contracted_node, std::vector<bool>& contracted, int num_outgoing,
                              int max_distance, int thread_num);
 
-    int simplifiedHubLabelQuery(std::vector<std::pair<int, int>>& fwd_labels, int node);
+    int simplifiedHubLabelQuery(std::vector<std::tuple<int, int, int, int>>& fwd_labels, int node);
 
-    int simplifiedHubLabelQuery(int node, std::vector<std::pair<int, int>>& bwd_labels);
+    int simplifiedHubLabelQuery(int node, std::vector<std::tuple<int, int, int, int>>& bwd_labels);
 
     void unpackEdge(const std::tuple<int, int, bool>& edge, std::vector<int>& path);
 };

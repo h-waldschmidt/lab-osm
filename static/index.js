@@ -133,8 +133,11 @@ function dijkstraQuery() {
                     polylineLayer = L.polyline(path.coordinates).addTo(map);
                     // Adjust the map view to show the complete polyline
                     map.fitBounds(polylineLayer.getBounds());
+
+                    enableButtons();
                 });
             } else {
+                enableButtons();
                 console.error(
                     "Error fetching dijkstra data:",
                     response.statusText
@@ -142,8 +145,6 @@ function dijkstraQuery() {
             }
         }
     );
-
-    enableButtons();
 }
 
 function chQuery() {
@@ -170,9 +171,43 @@ function chQuery() {
             });
         } else {
             enableButtons();
-            console.error("Error fetching dijkstra data:", response.statusText);
+            console.error("Error fetching CH data:", response.statusText);
         }
     });
+}
+
+function hubLabelQuery() {
+    if (startId == -1 || endId == -1) {
+        alert("Please select start and end coordinates!");
+        return;
+    }
+
+    disableButtons();
+
+    fetch(apiUrl + "hub-label?start=" + startId + "&end=" + endId).then(
+        (response) => {
+            if (response.ok) {
+                response.json().then((data) => {
+                    console.log(data);
+                    const path = data.path;
+                    const distance = data.distance;
+                    console.log("Distance: " + distance);
+
+                    clearPath();
+                    polylineLayer = L.polyline(path.coordinates).addTo(map);
+                    // Adjust the map view to show the complete polyline
+                    map.fitBounds(polylineLayer.getBounds());
+                    enableButtons();
+                });
+            } else {
+                enableButtons();
+                console.error(
+                    "Error fetching hub-label data:",
+                    response.statusText
+                );
+            }
+        }
+    );
 }
 
 function clearPath() {
