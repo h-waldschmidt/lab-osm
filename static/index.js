@@ -169,8 +169,8 @@ function chQuery() {
                 enableButtons();
             });
         } else {
-            console.error("Error fetching dijkstra data:", response.statusText);
             enableButtons();
+            console.error("Error fetching dijkstra data:", response.statusText);
         }
     });
 }

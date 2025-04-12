@@ -315,7 +315,7 @@ void Graph::contractionHierarchyQuery(QueryData& data) {
             for (int i = 0; i < m_reverse_graph[bwd_node.second].size(); ++i) {
                 Edge& e = m_reverse_graph[bwd_node.second][i];
                 if (!data.m_visited_bwd[e.m_target] || data.m_distances_bwd[e.m_target] > bwd_node.first + e.m_cost) {
-                    if (!data.m_visited_fwd[e.m_target]) data.m_reset_nodes_bwd.push_back(e.m_target);
+                    if (!data.m_visited_bwd[e.m_target]) data.m_reset_nodes_bwd.push_back(e.m_target);
 
                     data.m_distances_bwd[e.m_target] = bwd_node.first + e.m_cost;
                     bwd_pq.push(std::make_pair(data.m_distances_bwd[e.m_target], e.m_target));
@@ -343,7 +343,7 @@ void Graph::contractionHierarchyQuery(QueryData& data) {
 }
 
 void Graph::contractionHierarchyExtractPath(QueryData& data) {
-    if (!(data.m_distance < std::numeric_limits<int>::max() || data.m_distance > -1)) {
+    if (data.m_distance == std::numeric_limits<int>::max() || data.m_distance == -1 || data.m_meeting_node == -1) {
         std::cout << "Can't return path for invalid data!" << std::endl;
         return;
     }
@@ -353,6 +353,8 @@ void Graph::contractionHierarchyExtractPath(QueryData& data) {
 
     int cur_node = data.m_meeting_node;
 
+    std::cout << "Debug before gathering edges fwd" << std::endl;
+
     while (cur_node != data.m_start) {
         fwd_edges.push_back(
             std::make_tuple(data.m_fwd_prev_edge[cur_node].first, data.m_fwd_prev_edge[cur_node].second, true));
@@ -360,6 +362,7 @@ void Graph::contractionHierarchyExtractPath(QueryData& data) {
     }
     std::reverse(fwd_edges.begin(), fwd_edges.end());
 
+    std::cout << "Debug before unpacking edges fwd" << std::endl;
     std::vector<int> fwd_path;
     // resolve shortcut edges
     if (fwd_edges.empty()) {
@@ -374,6 +377,7 @@ void Graph::contractionHierarchyExtractPath(QueryData& data) {
         }
     }
 
+    std::cout << "Debug before gathering edges bwd" << std::endl;
     std::vector<std::tuple<int, int, bool>> bwd_edges;
     cur_node = data.m_meeting_node;
     while (cur_node != data.m_end) {
@@ -382,6 +386,7 @@ void Graph::contractionHierarchyExtractPath(QueryData& data) {
         cur_node = data.m_bwd_prev_edge[cur_node].first;
     }
 
+    std::cout << "Debug before unpacking edges bwd" << std::endl;
     std::vector<int> bwd_path;
     if (bwd_edges.empty()) {
         bwd_path.push_back(data.m_end);
@@ -394,6 +399,7 @@ void Graph::contractionHierarchyExtractPath(QueryData& data) {
         }
     }
 
+    std::cout << "Debug before combining paths" << std::endl;
     // combine the paths
     for (size_t i = 0; i < fwd_path.size(); ++i) {
         data.m_shortest_path.push_back(fwd_path[i]);
@@ -410,6 +416,7 @@ void Graph::unpackEdge(const std::tuple<int, int, bool>& edge_index, std::vector
     } else {
         edge = &m_reverse_graph[std::get<0>(edge_index)][std::get<1>(edge_index)];
     }
+
     if (!edge->isShortcut()) {
         if (path.empty() || (path.back() != std::get<0>(edge_index) && path.back() != edge->m_target)) {
             if (std::get<2>(edge_index))
