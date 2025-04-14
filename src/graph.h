@@ -96,6 +96,17 @@ class Graph {
 
     void hubLabelExtractPath(QueryData& data, std::pair<int, int> hub_indices);
 
+    /**
+     * @brief Calculates the distance of two given points based on the Haversine Formula
+     *
+     * @param lat_1
+     * @param lon_1
+     * @param lat_2
+     * @param lon_2
+     * @return distance between the points in meter
+     */
+    static int greatCircleDistance(double lat_1, double lon_1, double lat_2, double lon_2);
+
     double averageLabelSize();
 
     int maxLabelSize();
@@ -141,8 +152,8 @@ class Graph {
     std::vector<int> m_node_indices;
     std::vector<uint32_t> m_fwd_indices;
     std::vector<uint32_t> m_bwd_indices;
-    // first is hub node, second is distance to the hub node, third is edge_index in the graph (edge to that hub node),
-    // fourth is the index to the original hub
+    // first is hub node, second is distance to the hub node, third is edge_index in the graph (edge to that hub
+    // node), fourth is the index to the original hub
     std::vector<std::tuple<int, int, int, int>> m_fwd_hub_labels;
     std::vector<std::tuple<int, int, int, int>> m_bwd_hub_labels;
 
@@ -153,17 +164,6 @@ class Graph {
     void createReverseGraphCH();
 
     void createReverseGraphNormal();
-
-    /**
-     * @brief Calculates the distance of two given points based on the Haversine Formula
-     *
-     * @param lat_1
-     * @param lon_1
-     * @param lat_2
-     * @param lon_2
-     * @return distance between the points in meter
-     */
-    int greatCircleDistance(double lat_1, double lon_1, double lat_2, double lon_2);
 
     /**
      * @brief Calculates hierarchy and adds shortcuts to graph without using independent sets.

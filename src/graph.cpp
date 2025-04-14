@@ -901,6 +901,23 @@ void Graph::hubLabelExtractPath(QueryData& data, std::pair<int, int> hub_indices
     }
 }
 
+int Graph::greatCircleDistance(double lat_1, double lon_1, double lat_2, double lon_2) {
+    // degrees to radians
+    lat_1 *= (M_PI / 180.0);
+    lon_1 *= (M_PI / 180.0);
+    lat_2 *= (M_PI / 180.0);
+    lon_2 *= (M_PI / 180.0);
+
+    // Using Haversine Distance: https://en.wikipedia.org/wiki/Haversine_formula
+    // example in JS: https://github.com/njj/haversine/blob/develop/haversine.js
+    double d_lat = lat_2 - lat_1;
+    double d_lon = lon_2 - lon_1;
+    double a = pow(sin(d_lat / 2.0), 2) + pow(sin(d_lon / 2.0), 2) * cos(lat_1) * cos(lat_2);
+    double c = 2.0 * atan2(sqrt(a), sqrt(1 - a));
+
+    return 6371000 * c;  // return in meters
+}
+
 double Graph::averageLabelSize() {
     double avg_label_size = 0.0;
 
@@ -1044,23 +1061,6 @@ void Graph::createReverseGraphCH() {
 
     m_graph_contr.clear();
     m_reverse_graph_contr.clear();
-}
-
-int Graph::greatCircleDistance(double lat_1, double lon_1, double lat_2, double lon_2) {
-    // degrees to radians
-    lat_1 *= (M_PI / 180.0);
-    lon_1 *= (M_PI / 180.0);
-    lat_2 *= (M_PI / 180.0);
-    lon_2 *= (M_PI / 180.0);
-
-    // Using Haversine Distance: https://en.wikipedia.org/wiki/Haversine_formula
-    // example in JS: https://github.com/njj/haversine/blob/develop/haversine.js
-    double d_lat = lat_2 - lat_1;
-    double d_lon = lon_2 - lon_1;
-    double a = pow(sin(d_lat / 2.0), 2) + pow(sin(d_lon / 2.0), 2) * cos(lat_1) * cos(lat_2);
-    double c = 2.0 * atan2(sqrt(a), sqrt(1 - a));
-
-    return 6371000 * c;  // return in meters
 }
 
 void Graph::createCHwithoutIS(Heuristic heuristic) {

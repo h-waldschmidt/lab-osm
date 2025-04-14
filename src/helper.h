@@ -1,7 +1,7 @@
 #pragma once
 
-#include <vector>
 #include <tuple>
+#include <vector>
 
 namespace labosm {
 
@@ -149,4 +149,5 @@ struct QueryData {
  * MIXED is preferred when using IS.
  */
 enum Heuristic { IN_OUT = 0, EDGE_DIFFERENCE = 1, WEIGHTED_COST = 2, MIXED = 3 };
+
 }  // namespace labosm
