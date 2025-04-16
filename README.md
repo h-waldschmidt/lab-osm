@@ -29,3 +29,6 @@ git submodule update --remote --merge
 
 TODO:
 
+## Benchmarks
+- Point in Polygon test with 16 Threads: `24213776ms = 6h 43m`
+- On Land filtering based on image test: `4378ms = 4s`

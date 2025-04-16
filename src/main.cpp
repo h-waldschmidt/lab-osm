@@ -18,6 +18,9 @@
 #include <vector>
 
 #include "graph.h"
+
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
 // #include "helper.h"
 
 using NodeMap = std::unordered_map<uint64_t, std::pair<double, double>>;
@@ -68,8 +71,6 @@ std::vector<std::pair<double, double>> generatePointsOnSphere(int num_points) {
         // transform to degrees
         lat = lat * 180 / M_PI;
         lon = lon * 180 / M_PI;
-
-        std::cout << lat << " " << lon << std::endl;
 
         points[i] = {lon, lat};
     }
@@ -230,6 +231,21 @@ std::vector<std::pair<double, double>> filterOutsideWater(const std::vector<std:
         }
     }
 
+    // create plane for each edge in a way
+    std::vector<std::vector<Vec3>> way_planes;
+    way_planes.reserve(coastline_ways.size());
+    for (const auto& vec_way : vec_ways) {
+        std::vector<Vec3> planes(vec_way.size());
+        for (size_t j = 0; j < vec_way.size(); ++j) {
+            const auto& vec = vec_way[j];
+            const auto& next_vec = vec_way[(j + 1) % vec_way.size()];
+            Vec3 normal = Vec3(vec.y * next_vec.z - vec.z * next_vec.y, vec.z * next_vec.x - vec.x * next_vec.z,
+                               vec.x * next_vec.y - vec.y * next_vec.x);
+            planes[j] = normal.normalize();
+        }
+        way_planes.push_back(planes);
+    }
+
     int num_threads = 4;
     omp_set_num_threads(num_threads);
     std::vector<std::vector<int>> inside_points_per_thread(num_threads);
@@ -254,28 +270,6 @@ std::vector<std::pair<double, double>> filterOutsideWater(const std::vector<std:
         const auto& point = vec_points[i];
         bool inside = false;
 
-        double theta_z = -lon * deg2rad;          // rotation around z-axis
-        double theta_y = (lat - 90.0) * deg2rad;  // rotation around y-axis
-
-        // Precompute sines and cosines.
-        double cz = std::cos(theta_z);
-        double sz = std::sin(theta_z);
-        double cy = std::cos(theta_y);
-        double sy = std::sin(theta_y);
-
-        // Build the composite rotation matrix R = Ry * Rz.
-        // The 3x3 matrix is computed as:
-        // [ [cy*cz,    -cy*sz,    sy],
-        //   [sz,       cz,        0],
-        //   [-sy*cz,   sy*sz,     cy] ]
-        // clang-format off
-        double R[3][3] = {
-            {cy * cz, -cy * sz, sy},
-            {sz,      cz,       0.0},
-            {-sy * cz, sy * sz, cy}
-        };
-        // clang-format on
-
         for (size_t j = 0; j < vec_ways.size(); ++j) {
             const auto& vec_way = vec_ways[j];
             const auto& box = boxes[j];
@@ -286,38 +280,16 @@ std::vector<std::pair<double, double>> filterOutsideWater(const std::vector<std:
                 continue;
             }
 
-            double sum_angle = 0.0;
-            double cur_lon_transformed = 0.0;
-            double previous_lon_transformed = 0.0;
-
-            // calculate the first iteration
-            const auto& vec = vec_way[0];
-            double x_rotated = R[0][0] * vec.x + R[0][1] * vec.y + R[0][2] * vec.z;
-            double y_rotated = R[1][0] * vec.x + R[1][1] * vec.y + R[1][2] * vec.z;
-            double z_rotated = R[2][0] * vec.x + R[2][1] * vec.y + R[2][2] * vec.z;
-            previous_lon_transformed = atan2(y_rotated, x_rotated);
-
-            // #pragma omp simd
-            for (size_t k = 1; k < vec_way.size(); ++k) {
-                const auto& vec = vec_way[k];
-                // apply rotation
-                x_rotated = R[0][0] * vec.x + R[0][1] * vec.y + R[0][2] * vec.z;
-                y_rotated = R[1][0] * vec.x + R[1][1] * vec.y + R[1][2] * vec.z;
-                z_rotated = R[2][0] * vec.x + R[2][1] * vec.y + R[2][2] * vec.z;
-
-                cur_lon_transformed = atan2(y_rotated, x_rotated);
-
-                double angle = cur_lon_transformed - previous_lon_transformed;
-                angle += (angle < -M_PI) * two_pi;
-                angle -= (angle > M_PI) * two_pi;
-                sum_angle += angle;
-
-                previous_lon_transformed = cur_lon_transformed;
-            }
-
-            if (fabs(sum_angle - two_pi) < 1e-4 || fabs(sum_angle + two_pi) < 1e-4) {
+            // dot product with each plane and point
+            // if one is negative, the point is outside
+            for (size_t k = 0; k < vec_way.size(); ++k) {
+                const auto& plane = way_planes[j][k];
+                double dot_product = point.x * plane.x + point.y * plane.y + point.z * plane.z;
+                if (dot_product > 0) {
+                    inside = false;
+                    break;
+                }
                 inside = true;
-                break;
             }
         }
 
@@ -340,6 +312,54 @@ std::vector<std::pair<double, double>> filterOutsideWater(const std::vector<std:
         }
     }
 
+    return filtered_points;
+}
+
+// Projection: Equirectangular (aka Plate Carrée, EPSG:4326)
+std::pair<int, int> latlon_to_pixel(double lat, double lon, int img_width, int img_height) {
+    // Normalize longitude from [−180, 180] to [0, 1]
+    double x = (lon + 180.0) / 360.0;
+
+    // Normalize latitude from [90, -90] to [0, 1] (top to bottom)
+    double y = (90.0 - lat) / 180.0;
+
+    // Convert to pixel coordinates
+    int px = static_cast<int>(x * img_width);
+    int py = static_cast<int>(y * img_height);
+
+    // Clamp to image bounds just in case
+    px = std::max(0, std::min(px, img_width - 1));
+    py = std::max(0, std::min(py, img_height - 1));
+
+    return {px, py};
+}
+
+std::vector<std::pair<double, double>> filterOutsideWaterImageBased(
+    const std::vector<std::pair<double, double>>& points, const std::string& image_path) {
+    int width, height, channels;
+    unsigned char* data = stbi_load(image_path.c_str(), &width, &height, &channels, 0);
+    if (!data) {
+        std::cerr << "Failed to load image: " << image_path << std::endl;
+        return points;
+    }
+    std::vector<std::pair<double, double>> filtered_points;
+
+    for (int i = 0; i < points.size(); ++i) {
+        const auto& [lon, lat] = points[i];
+
+        auto [px, py] = latlon_to_pixel(lat, lon, width, height);
+
+        // skip if white
+        if (data[py * width * channels + px * channels] == 255 &&
+            data[py * width * channels + px * channels + 1] == 255 &&
+            data[py * width * channels + px * channels + 2] == 255) {
+            continue;
+        }
+
+        filtered_points.push_back(points[i]);
+    }
+
+    stbi_image_free(data);
     return filtered_points;
 }
 
@@ -484,7 +504,6 @@ void printGraphToFMI(const std::vector<std::pair<double, double>>& points,
         }
     }
 }
-
 /*
 int main() {
     auto points = readPointsGeoJSON("filtered_points.geojson");
@@ -555,13 +574,13 @@ int main(int argc, char* argv[]) {
     out << "]}" << '\n';
     out.close();
 
-    auto filtered_points = filterOutsideWater(points);
+    auto filtered_points = filterOutsideWaterImageBased(points, "nasa_21600x10800.png");
     auto end_filtering = std::chrono::steady_clock::now();
     std::cout << "Filtering time: "
               << std::chrono::duration_cast<std::chrono::milliseconds>(end_filtering - start_filtering).count()
               << " ms\n";
 
-    std::ofstream out_filtered("filtered_points.geojson");
+    std::ofstream out_filtered("filtered_points_image.geojson");
     out_filtered << R"({"type": "FeatureCollection", "features": [)";
     // write all into one LineString
     for (size_t i = 0; i < filtered_points.size(); ++i) {
