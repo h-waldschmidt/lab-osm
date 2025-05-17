@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <fstream>
 #include <iostream>
 #include <numeric>
@@ -11,6 +12,7 @@
 #include <osmium/io/any_input.hpp>
 #include <osmium/osm/location.hpp>
 #include <osmium/visitor.hpp>
+#include <random>
 #include <regex>
 #include <string>
 #include <unordered_map>
@@ -19,6 +21,7 @@
 
 #include "graph.h"
 
+// TODO: Move external stuff to third-party
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 // #include "helper.h"
@@ -52,9 +55,9 @@ int getMemoryUsage() {  // Note: this value is in KB!
 std::vector<std::pair<double, double>> generatePointsOnSphere(int num_points) {
     std::vector<std::pair<double, double>> points(num_points);
 
-    // fibonacci sphere algorithm
+    /*
+        // fibonacci sphere algorithm
     // https://openprocessing.org/sketch/41142
-
     double phi = (sqrt(5) + 1) / 2 - 1;  // golden ratio
     double theta = 2 * M_PI * phi;       // golden angle
 
@@ -71,6 +74,25 @@ std::vector<std::pair<double, double>> generatePointsOnSphere(int num_points) {
         // transform to degrees
         lat = lat * 180 / M_PI;
         lon = lon * 180 / M_PI;
+
+        points[i] = {lon, lat};
+    }
+    */
+
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_real_distribution<> dis(0, 1);
+
+    for (int i = 0; i < num_points; ++i) {
+        double u = dis(gen);
+        double v = dis(gen);
+
+        double theta = 2 * M_PI * u;
+        double phi = acos(2 * v - 1);
+
+        double lat = M_PI / 2 - phi;
+        lat = lat * 180 / M_PI;
+        double lon = theta * 180 / M_PI;
 
         points[i] = {lon, lat};
     }
@@ -231,22 +253,7 @@ std::vector<std::pair<double, double>> filterOutsideWater(const std::vector<std:
         }
     }
 
-    // create plane for each edge in a way
-    std::vector<std::vector<Vec3>> way_planes;
-    way_planes.reserve(coastline_ways.size());
-    for (const auto& vec_way : vec_ways) {
-        std::vector<Vec3> planes(vec_way.size());
-        for (size_t j = 0; j < vec_way.size(); ++j) {
-            const auto& vec = vec_way[j];
-            const auto& next_vec = vec_way[(j + 1) % vec_way.size()];
-            Vec3 normal = Vec3(vec.y * next_vec.z - vec.z * next_vec.y, vec.z * next_vec.x - vec.x * next_vec.z,
-                               vec.x * next_vec.y - vec.y * next_vec.x);
-            planes[j] = normal.normalize();
-        }
-        way_planes.push_back(planes);
-    }
-
-    int num_threads = 4;
+    int num_threads = 16;
     omp_set_num_threads(num_threads);
     std::vector<std::vector<int>> inside_points_per_thread(num_threads);
     for (int i = 0; i < num_threads; ++i) {
@@ -270,6 +277,28 @@ std::vector<std::pair<double, double>> filterOutsideWater(const std::vector<std:
         const auto& point = vec_points[i];
         bool inside = false;
 
+        double theta_z = -lon * deg2rad;          // rotation around z-axis
+        double theta_y = (lat - 90.0) * deg2rad;  // rotation around y-axis
+
+        // Precompute sines and cosines.
+        double cz = std::cos(theta_z);
+        double sz = std::sin(theta_z);
+        double cy = std::cos(theta_y);
+        double sy = std::sin(theta_y);
+
+        // Build the composite rotation matrix R = Ry * Rz.
+        // The 3x3 matrix is computed as:
+        // [ [cy*cz,    -cy*sz,    sy],
+        //   [sz,       cz,        0],
+        //   [-sy*cz,   sy*sz,     cy] ]
+        // clang-format off
+        double R[3][3] = {
+            {cy * cz, -cy * sz, sy},
+            {sz,      cz,       0.0},
+            {-sy * cz, sy * sz, cy}
+        };
+        // clang-format on
+
         for (size_t j = 0; j < vec_ways.size(); ++j) {
             const auto& vec_way = vec_ways[j];
             const auto& box = boxes[j];
@@ -280,16 +309,38 @@ std::vector<std::pair<double, double>> filterOutsideWater(const std::vector<std:
                 continue;
             }
 
-            // dot product with each plane and point
-            // if one is negative, the point is outside
-            for (size_t k = 0; k < vec_way.size(); ++k) {
-                const auto& plane = way_planes[j][k];
-                double dot_product = point.x * plane.x + point.y * plane.y + point.z * plane.z;
-                if (dot_product > 0) {
-                    inside = false;
-                    break;
-                }
+            double sum_angle = 0.0;
+            double cur_lon_transformed = 0.0;
+            double previous_lon_transformed = 0.0;
+
+            // calculate the first iteration
+            const auto& vec = vec_way[0];
+            double x_rotated = R[0][0] * vec.x + R[0][1] * vec.y + R[0][2] * vec.z;
+            double y_rotated = R[1][0] * vec.x + R[1][1] * vec.y + R[1][2] * vec.z;
+            double z_rotated = R[2][0] * vec.x + R[2][1] * vec.y + R[2][2] * vec.z;
+            previous_lon_transformed = atan2(y_rotated, x_rotated);
+
+            // #pragma omp simd
+            for (size_t k = 1; k < vec_way.size(); ++k) {
+                const auto& vec = vec_way[k];
+                // apply rotation
+                x_rotated = R[0][0] * vec.x + R[0][1] * vec.y + R[0][2] * vec.z;
+                y_rotated = R[1][0] * vec.x + R[1][1] * vec.y + R[1][2] * vec.z;
+                z_rotated = R[2][0] * vec.x + R[2][1] * vec.y + R[2][2] * vec.z;
+
+                cur_lon_transformed = atan2(y_rotated, x_rotated);
+
+                double angle = cur_lon_transformed - previous_lon_transformed;
+                angle += (angle < -M_PI) * two_pi;
+                angle -= (angle > M_PI) * two_pi;
+                sum_angle += angle;
+
+                previous_lon_transformed = cur_lon_transformed;
+            }
+
+            if (fabs(sum_angle - two_pi) < 1e-4 || fabs(sum_angle + two_pi) < 1e-4) {
                 inside = true;
+                break;
             }
         }
 
@@ -392,10 +443,27 @@ std::vector<std::pair<double, double>> readPointsGeoJSON(const std::string& file
     return points;
 }
 
+int greatCircleDistance(double lat1_rad, double lon1_rad, double lat2_rad, double lon2_rad) {
+    double d_lat = lat2_rad - lat1_rad;
+    double d_lon = lon2_rad - lon1_rad;
+    double a = pow(sin(d_lat / 2.0), 2) + pow(sin(d_lon / 2.0), 2) * cos(lat1_rad) * cos(lat2_rad);
+    double c = 2.0 * atan2(sqrt(a), sqrt(1 - a));
+
+    return 6371000 * c;  // return in meters
+}
+
 std::vector<std::vector<labosm::Edge>> createGraph(std::vector<std::pair<double, double>>& points) {
-    const int max_edge_length = 300000000;  // 30 km
+    const int max_edge_length = 30000;  // 30 km
     std::vector<std::vector<labosm::Edge>> graph(points.size());
 
+    std::vector<std::pair<double, double>> pointsToRadians(points.size());
+    for (int i = 0; i < points.size(); ++i) {
+        const auto& [lon, lat] = points[i];
+        pointsToRadians[i] = {lon * M_PI / 180.0, lat * M_PI / 180.0};
+    }
+
+    omp_set_num_threads(16);
+#pragma omp parallel for
     for (int i = 0; i < points.size(); ++i) {
         const auto& [lon1, lat1] = points[i];
         // select closest points in these directions
@@ -408,52 +476,39 @@ std::vector<std::vector<labosm::Edge>> createGraph(std::vector<std::pair<double,
         int north_east_index = -1;
         int north_east_distance = std::numeric_limits<int>::max();
 
-        for (int j = 0; j < points.size(); ++j) {
-            if (i == j) continue;
-
+        for (int j = i + 1; j < points.size(); ++j) {
             const auto& [lon1, lat1] = points[i];
             const auto& [lon2, lat2] = points[j];
 
-            double distance = labosm::Graph::greatCircleDistance(lat1, lon1, lat2, lon2);
+            // TODO: skip if the points are too far apart
+
+            const auto& [lon1_rad, lat1_rad] = pointsToRadians[i];
+            const auto& [lon2_rad, lat2_rad] = pointsToRadians[j];
+
+            int distance = greatCircleDistance(lat1_rad, lon1_rad, lat2_rad, lon2_rad);
             if (distance > max_edge_length) continue;
 
             // edge cases at -180, 180, -90, 90
             // add 180 and 90 to the lon and lat to reduce the edge cases
-            double lat1_adjusted = lat1 + 90;
-            double lon1_adjusted = lon1 + 180;
-            double lat2_adjusted = lat2 + 90;
-            double lon2_adjusted = lon2 + 180;
+            const double lat1_adjusted = lat1 + 90;
+            const double lon1_adjusted = lon1 + 180;
+            const double lat2_adjusted = lat2 + 90;
+            const double lon2_adjusted = lon2 + 180;
 
-            if (lat2_adjusted < lat1_adjusted && lon2_adjusted > lon1_adjusted && lon1_adjusted < 180 &&
-                lon2_adjusted > 180 && distance < south_west_distance) {
+            const bool south = lat2_adjusted < lat1_adjusted;
+            // also test for the edge case where we are at crossing from 360 to 0
+            const bool west = (lon2_adjusted < lon1_adjusted) || (lon1_adjusted < 60 && lon2_adjusted > 300);
+
+            if (distance < south_west_index && south && west) {
                 south_west_distance = distance;
                 south_west_index = j;
-            } else if (lat2_adjusted < lat1_adjusted && lon2_adjusted < lon1_adjusted && lon1_adjusted > 180 &&
-                       lon2_adjusted < 180 && distance < south_east_distance) {
+            } else if (distance < south_east_distance && south && !west) {
                 south_east_distance = distance;
                 south_east_index = j;
-            } else if (lat2_adjusted > lat1_adjusted && lon2_adjusted < lon1_adjusted && lon1_adjusted > 180 &&
-                       lon2_adjusted < 180 && distance < north_west_distance) {
+            } else if (distance < north_west_distance && !south && west) {
                 north_west_distance = distance;
                 north_west_index = j;
-            } else if (lat2_adjusted > lat1_adjusted && lon2_adjusted > lon1_adjusted && lon1_adjusted < 180 &&
-                       lon2_adjusted > 180 && distance < north_east_distance) {
-                north_east_distance = distance;
-                north_east_index = j;
-            } else if (lat2_adjusted < lat1_adjusted && lon2_adjusted < lon1_adjusted &&
-                       distance < south_west_distance) {
-                south_west_distance = distance;
-                south_west_index = j;
-            } else if (lat2_adjusted < lat1_adjusted && lon2_adjusted > lon1_adjusted &&
-                       distance < south_east_distance) {
-                south_east_distance = distance;
-                south_east_index = j;
-            } else if (lat2_adjusted > lat1_adjusted && lon2_adjusted < lon1_adjusted &&
-                       distance < north_west_distance) {
-                north_west_distance = distance;
-                north_west_index = j;
-            } else if (lat2_adjusted > lat1_adjusted && lon2_adjusted > lon1_adjusted &&
-                       distance < north_east_distance) {
+            } else if (distance < north_east_distance) {
                 north_east_distance = distance;
                 north_east_index = j;
             }
@@ -462,16 +517,36 @@ std::vector<std::vector<labosm::Edge>> createGraph(std::vector<std::pair<double,
         // check that none of the indices are the same
         if (south_west_index != -1) {
             graph[i].emplace_back(south_west_index, south_west_distance);
+#pragma omp critical
+            {
+                graph[south_west_index].emplace_back(i, south_west_distance);
+            }
         }
         if (south_east_index != -1 && south_east_index != south_west_index) {
             graph[i].emplace_back(south_east_index, south_east_distance);
+#pragma omp critical
+            {
+                graph[south_east_index].emplace_back(i, south_east_distance);
+            }
         }
         if (north_west_index != -1 && north_west_index != south_west_index && north_west_index != south_east_index) {
             graph[i].emplace_back(north_west_index, north_west_distance);
+#pragma omp critical
+            {
+                graph[north_west_index].emplace_back(i, north_west_distance);
+            }
         }
         if (north_east_index != -1 && north_east_index != south_west_index && north_east_index != south_east_index &&
             north_east_index != north_west_index) {
             graph[i].emplace_back(north_east_index, north_east_distance);
+#pragma omp critical
+            {
+                graph[north_east_index].emplace_back(i, north_east_distance);
+            }
+        }
+
+        if (i % 1000 == 0) {
+            std::cout << "Thread " << omp_get_thread_num() << " processed " << i << " points\n";
         }
     }
 
@@ -504,19 +579,30 @@ void printGraphToFMI(const std::vector<std::pair<double, double>>& points,
         }
     }
 }
-/*
-int main() {
-    auto points = readPointsGeoJSON("filtered_points.geojson");
-    std::cout << "Read " << points.size() << " points from geojson file\n";
-    auto start = std::chrono::steady_clock::now();
-    auto graph = createGraph(points);
-    auto end = std::chrono::steady_clock::now();
-    std::cout << "Graph creation tooK: " << std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count()
-              << " ms\n";
-    printGraphToFMI(points, graph, "coastlines.fmi");
-}
-*/
 
+int main() {
+    {
+        auto points = readPointsGeoJSON("filtered_points_image_6M.geojson");
+        std::cout << "Read " << points.size() << " points from geojson file\n";
+        auto start = std::chrono::steady_clock::now();
+        auto graph = createGraph(points);
+        auto end = std::chrono::steady_clock::now();
+        std::cout << "Graph creation tooK: "
+                  << std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count() << " ms\n";
+        printGraphToFMI(points, graph, "coastlines_6M_image.fmi");
+    }
+    {
+        auto points = readPointsGeoJSON("filtered_points_6M.geojson");
+        std::cout << "Read " << points.size() << " points from geojson file\n";
+        auto start = std::chrono::steady_clock::now();
+        auto graph = createGraph(points);
+        auto end = std::chrono::steady_clock::now();
+        std::cout << "Graph creation tooK: "
+                  << std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count() << " ms\n";
+        printGraphToFMI(points, graph, "coastlines_6M.fmi");
+    }
+}
+/*
 int main(int argc, char* argv[]) {
     const char* input_filename = argv[1];
 
@@ -538,6 +624,8 @@ int main(int argc, char* argv[]) {
     std::cout << "Reading time: "
               << std::chrono::duration_cast<std::chrono::milliseconds>(end_reading - start_reading).count() << " ms\n";
 
+    write_geojson("coastlines_raw.geojson", coastline_nodes, coastline_ways);
+
     auto start_merging = std::chrono::steady_clock::now();
     merge_ways();
     auto end_merging = std::chrono::steady_clock::now();
@@ -558,11 +646,11 @@ int main(int argc, char* argv[]) {
     // coastline_ways.clear();
     // coastline_ways[longest_way.front()] = longest_way;
 
-    int num_points = 1000;
+    int num_points = 6000000;
     auto start_filtering = std::chrono::steady_clock::now();
     auto points = generatePointsOnSphere(num_points);
 
-    std::ofstream out("points.geojson");
+    std::ofstream out("points_6M.geojson");
     out << R"({"type": "FeatureCollection", "features": [)";
     for (size_t i = 0; i < points.size(); ++i) {
         if (i > 0) out << ",";
@@ -574,13 +662,13 @@ int main(int argc, char* argv[]) {
     out << "]}" << '\n';
     out.close();
 
-    auto filtered_points = filterOutsideWaterImageBased(points, "nasa_21600x10800.png");
+    auto filtered_points = filterOutsideWater(points);
     auto end_filtering = std::chrono::steady_clock::now();
     std::cout << "Filtering time: "
               << std::chrono::duration_cast<std::chrono::milliseconds>(end_filtering - start_filtering).count()
               << " ms\n";
 
-    std::ofstream out_filtered("filtered_points_image.geojson");
+    std::ofstream out_filtered("filtered_points_6M.geojson");
     out_filtered << R"({"type": "FeatureCollection", "features": [)";
     // write all into one LineString
     for (size_t i = 0; i < filtered_points.size(); ++i) {
@@ -593,27 +681,7 @@ int main(int argc, char* argv[]) {
     out_filtered << "]}" << '\n';
     out_filtered.close();
 
-    // write_geojson(output_filename, coastline_nodes, coastline_ways);
-
-    return 0;
-}
-
-/*
-int main() {
-    // render as lines with point duplicated
-    // make points much bigger
-    std::ofstream out("points.geojson");
-    out << R"({"type": "FeatureCollection", "features": [)";
-    // write all into one LineString
-    for (size_t i = 0; i < points.size(); ++i) {
-        if (i > 0) out << ",";
-        // point
-        out << R"({"type": "Feature","geometry":{"type": "Point","coordinates":[)";
-        out << points[i].first << "," << points[i].second << "]},";
-        out << R"("properties":{}})";
-    }
-    out << "]}" << '\n';
-    out.close();
+    write_geojson("coastlines.geojson", coastline_nodes, coastline_ways);
 
     return 0;
 }
@@ -709,7 +777,7 @@ parameter"})",
 }
 
 void advancedServer(const std::string& fmi_file) {
-    labosm::Graph g(fmi_file, true, 4, labosm::Heuristic::MIXED);
+    labosm::Graph g(fmi_file, true, 12, labosm::Heuristic::MIXED);
     labosm::QueryData data(g.getNumNodes());
 
     g.createHubLabelsWithIS();
@@ -855,6 +923,7 @@ parameter"})",
     std::cout << "Server started on port 8080" << std::endl;
     svr.listen("0.0.0.0", 8080);
 }
+
 /*
 int main(int argc, char* argv[]) {
     if (argc <= 2) {

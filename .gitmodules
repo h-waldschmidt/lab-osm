@@ -1,6 +1,6 @@
 [submodule "cpp-httplib"]
-	path = cpp-httplib
+	path = third-party/cpp-httplib
 	url = https://github.com/yhirose/cpp-httplib.git
 [submodule "protozero"]
-	path = protozero
+	path = third-party/protozero
 	url = https://github.com/mapbox/protozero.git
