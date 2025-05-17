@@ -1,4 +1,4 @@
-const apiUrl = "http://localhost:8080/api/";
+const apiUrl = "http://192.168.178.39:8080/api/";
 
 let startId = -1;
 let endId = -1;

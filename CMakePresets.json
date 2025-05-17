@@ -9,23 +9,23 @@
         {
             "name": "Base",
             "hidden": true,
-            "binaryDir": "${sourceDir}/build"
+            "binaryDir": "${sourceDir}/build",
+            "generator": "Ninja"
         },
         {
             "name": "Debug",
             "inherits": "Base",
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Debug",
-                "CMAKE_EXPORT_COMPILE_COMMANDS": "true",
-                "CMAKE_C_COMPILER": "/opt/homebrew/opt/llvm/bin/clang",
-                "CMAKE_CXX_COMPILER": "/opt/homebrew/opt/llvm/bin/clang++"
+                "CMAKE_EXPORT_COMPILE_COMMANDS": "true"
             }
         },
         {
             "name": "Release",
             "inherits": "Base",
             "cacheVariables": {
-                "CMAKE_BUILD_TYPE": "Release"
+                "CMAKE_BUILD_TYPE": "Release",
+                "CMAKE_EXPORT_COMPILE_COMMANDS": "true"
             }
         }
     ],

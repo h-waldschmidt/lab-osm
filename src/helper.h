@@ -1,9 +1,79 @@
 #pragma once
 
+#include <cmath>
+#include <limits>
 #include <tuple>
 #include <vector>
 
 namespace labosm {
+
+struct BoudingBox {
+    double min_lat;
+    double max_lat;
+    double min_lon;
+    double max_lon;
+
+    BoudingBox(double min_lat, double max_lat, double min_lon, double max_lon)
+        : min_lat(min_lat), max_lat(max_lat), min_lon(min_lon), max_lon(max_lon) {}
+
+    BoudingBox() : min_lat(0), max_lat(0), min_lon(0), max_lon(0) {}
+
+    bool contains(double lat, double lon) const {
+        return lat >= min_lat && lat <= max_lat && lon >= min_lon && lon <= max_lon;
+    }
+};
+
+struct Vec3 {
+    double x, y, z;
+
+    Vec3() : x(0), y(0), z(0) {}
+    Vec3(double lat, double lon) {
+        double lat_rad = lat * M_PI / 180.0;
+        double lon_rad = lon * M_PI / 180.0;
+        x = cos(lat_rad) * cos(lon_rad);
+        y = cos(lat_rad) * sin(lon_rad);
+        z = sin(lat_rad);
+    }
+
+    Vec3(double x, double y, double z) : x(x), y(y), z(z) {}
+
+    Vec3 normalize() const {
+        double magnitude = sqrt(x * x + y * y + z * z);
+        if (magnitude == 0) return Vec3(0, 0, 0);
+        return Vec3(x / magnitude, y / magnitude, z / magnitude);
+    }
+
+    Vec3 negative() const { return Vec3(-x, -y, -z); }
+};
+
+constexpr double R_EARTH = 6'371'000.0;  // metres
+
+struct PointXYZ {
+    double x, y, z;
+};  // unit-sphere Cartesian
+
+struct PointCloud {
+    std::vector<PointXYZ> pts;
+
+    /* nanoflann API ---------- */
+    inline size_t kdtree_get_point_count() const { return pts.size(); }
+
+    inline double kdtree_get_pt(size_t idx, int dim) const {
+        const PointXYZ& p = pts[idx];
+        return dim == 0 ? p.x : (dim == 1 ? p.y : p.z);
+    }
+    template <class BBOX>
+    bool kdtree_get_bbox(BBOX&) const {
+        return false;
+    }
+};
+
+inline int greatCircleDistance(double lat1, double lon1, double lat2, double lon2) {
+    double dLat = lat2 - lat1, dLon = lon2 - lon1;
+    double a = std::pow(std::sin(dLat * 0.5), 2) + std::pow(std::sin(dLon * 0.5), 2) * std::cos(lat1) * std::cos(lat2);
+    double c = 2.0 * std::atan2(std::sqrt(a), std::sqrt(1.0 - a));
+    return static_cast<int>(R_EARTH * c);
+}
 
 struct Edge {
     int m_target;  // corresponds to index of node in graph data structure

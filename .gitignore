@@ -35,3 +35,6 @@ build/
 *.pbf
 *.fmi
 *.geojson
+*.png
+*.jpg
+.vscode/

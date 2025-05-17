@@ -2,7 +2,7 @@ FROM debian:buster-slim
 
 RUN apt-get update; \
     apt-get install -y git zip curl unzip tar build-essential \
-    pkg-config ninja-build libosmium2-dev libprotobuf-dev protobuf-compiler zlib1g-dev libosmpbf-dev; \
+    pkg-config ninja-build libosmium2-dev libprotobuf-dev protobuf-compiler zlib1g-dev libosmpbf-dev libnanoflann-dev; \
     apt-get clean;
 
 # install newest cmake version

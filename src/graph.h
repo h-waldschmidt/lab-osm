@@ -3,8 +3,6 @@
 #include <omp.h>
 #include <stdint.h>
 
-#include <cstddef>
-#include <limits>
 #include <string>
 #include <vector>
 

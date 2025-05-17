@@ -49,7 +49,7 @@ Graph::Graph(const std::string& path, bool ch_available, int num_threads, Heuris
 }
 
 void Graph::readGraph(const std::string& path) {
-    std::cout << "Started reading graph file." << std::endl;
+    std::cout << "Started reading graph file." << "\n";
 
     auto begin = std::chrono::high_resolution_clock::now();
     std::ifstream infile;
@@ -116,16 +116,16 @@ void Graph::readGraph(const std::string& path) {
 
     auto end = std::chrono::high_resolution_clock::now();
     auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - begin);
-    std::cout << "Finished reading graph file. Took " << elapsed.count() << " milliseconds " << std::endl;
+    std::cout << "Finished reading graph file. Took " << elapsed.count() << " milliseconds " << "\n";
 }
 
 void Graph::createReverseGraph() {
-    std::cout << "Started creating reverse graph." << std::endl;
+    std::cout << "Started creating reverse graph." << "\n";
 
     auto begin = std::chrono::high_resolution_clock::now();
 
     if (m_graph.empty()) {
-        std::cout << "Can't create reverse graph, because graph is empty" << std::endl;
+        std::cout << "Can't create reverse graph, because graph is empty" << "\n";
         return;
     }
 
@@ -139,7 +139,7 @@ void Graph::createReverseGraph() {
 
     auto end = std::chrono::high_resolution_clock::now();
     auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - begin);
-    std::cout << "Finished creating reverse graph. Took " << elapsed.count() << " milliseconds " << std::endl;
+    std::cout << "Finished creating reverse graph. Took " << elapsed.count() << " milliseconds " << "\n";
 }
 
 void Graph::dijkstraQuery(DijkstraQueryData& data) {
@@ -188,7 +188,7 @@ void Graph::dijkstraQuery(DijkstraQueryData& data) {
 
 void Graph::dijkstraExtractPath(DijkstraQueryData& data) {
     if (!(data.m_distance < std::numeric_limits<int>::max() || data.m_distance > -1)) {
-        std::cout << "Can't return path for invalid data!" << std::endl;
+        std::cout << "Can't return path for invalid data!" << "\n";
         return;
     }
 
@@ -205,7 +205,7 @@ void Graph::dijkstraExtractPath(DijkstraQueryData& data) {
 
 void Graph::bidirectionalDijkstraGetPath(QueryData& data) {
     if (!(data.m_distance < std::numeric_limits<int>::max() || data.m_distance > -1)) {
-        std::cout << "Can't return path for invalid data!" << std::endl;
+        std::cout << "Can't return path for invalid data!" << "\n";
         return;
     }
 
@@ -235,16 +235,16 @@ void Graph::bidirectionalDijkstraGetPath(QueryData& data) {
     for (int i = 0; i < bwd_path.size(); ++i) {
         data.m_shortest_path.push_back(bwd_path[i]);
     }
-    std::cout << "Level of Meeting Node: " << m_node_level[data.m_meeting_node] << std::endl;
+    std::cout << "Level of Meeting Node: " << m_node_level[data.m_meeting_node] << "\n";
     for (size_t i = 0; i < data.m_shortest_path.size(); i++) {
         std::cout << "NodeID: " << data.m_shortest_path[i] << " Level: " << m_node_level[data.m_shortest_path[i]]
-                  << std::endl;
+                  << "\n";
     }
 }
 
 void Graph::contractionHierarchyQuery(QueryData& data) {
     if (data.m_start < 0 || data.m_end < 0) {
-        std::cout << "Invalid start or end nodes!" << std::endl;
+        std::cout << "Invalid start or end nodes!" << "\n";
         return;
     }
 
@@ -351,7 +351,7 @@ void Graph::contractionHierarchyQuery(QueryData& data) {
 
 void Graph::contractionHierarchyExtractPath(QueryData& data) {
     if (data.m_distance == std::numeric_limits<int>::max() || data.m_distance == -1 || data.m_meeting_node == -1) {
-        std::cout << "Can't return path for invalid data!" << std::endl;
+        std::cout << "Can't return path for invalid data!" << "\n";
         return;
     }
 
@@ -360,19 +360,19 @@ void Graph::contractionHierarchyExtractPath(QueryData& data) {
 
     int cur_node = data.m_meeting_node;
 
-    std::cout << "Debug before gathering edges fwd" << std::endl;
+    std::cout << "Debug before gathering edges fwd" << "\n";
 
     while (cur_node != data.m_start) {
-        std::cout << "Cur Node FWD: " << cur_node << std::endl;
+        std::cout << "Cur Node FWD: " << cur_node << "\n";
         std::cout << "Edge Index: " << data.m_fwd_prev_edge[cur_node].first << " "
-                  << data.m_fwd_prev_edge[cur_node].second << std::endl;
+                  << data.m_fwd_prev_edge[cur_node].second << "\n";
         fwd_edges.push_back(
             std::make_tuple(data.m_fwd_prev_edge[cur_node].first, data.m_fwd_prev_edge[cur_node].second, true));
         cur_node = data.m_fwd_prev_edge[cur_node].first;
     }
     std::reverse(fwd_edges.begin(), fwd_edges.end());
 
-    std::cout << "Debug before unpacking edges fwd" << std::endl;
+    std::cout << "Debug before unpacking edges fwd" << "\n";
     std::vector<int> fwd_path;
     // resolve shortcut edges
     if (fwd_edges.empty()) {
@@ -387,20 +387,20 @@ void Graph::contractionHierarchyExtractPath(QueryData& data) {
         }
     }
 
-    std::cout << "Debug before gathering edges bwd" << std::endl;
+    std::cout << "Debug before gathering edges bwd" << "\n";
     std::vector<std::tuple<int, int, bool>> bwd_edges;
     cur_node = data.m_meeting_node;
     while (cur_node != data.m_end) {
-        std::cout << "Cur Node BWD: " << cur_node << std::endl;
+        std::cout << "Cur Node BWD: " << cur_node << "\n";
         std::cout << "Edge Index: " << data.m_fwd_prev_edge[cur_node].first << " "
-                  << data.m_fwd_prev_edge[cur_node].second << std::endl;
+                  << data.m_fwd_prev_edge[cur_node].second << "\n";
 
         bwd_edges.push_back(
             std::make_tuple(data.m_bwd_prev_edge[cur_node].first, data.m_bwd_prev_edge[cur_node].second, false));
         cur_node = data.m_bwd_prev_edge[cur_node].first;
     }
 
-    std::cout << "Debug before unpacking edges bwd" << std::endl;
+    std::cout << "Debug before unpacking edges bwd" << "\n";
     std::vector<int> bwd_path;
     if (bwd_edges.empty()) {
         bwd_path.push_back(data.m_end);
@@ -413,7 +413,7 @@ void Graph::contractionHierarchyExtractPath(QueryData& data) {
         }
     }
 
-    std::cout << "Debug before combining paths" << std::endl;
+    std::cout << "Debug before combining paths" << "\n";
     // combine the paths
     for (size_t i = 0; i < fwd_path.size(); ++i) {
         data.m_shortest_path.push_back(fwd_path[i]);
@@ -456,11 +456,11 @@ void Graph::unpackEdge(const std::tuple<int, int, bool>& edge_index, std::vector
 }
 
 void Graph::createHubLabelsWithoutIS() {
-    std::cout << "Started creating hub labels." << std::endl;
+    std::cout << "Started creating hub labels." << "\n";
     auto begin = std::chrono::high_resolution_clock::now();
 
     if (m_graph.empty() || m_reverse_graph.empty()) {
-        std::cout << "Can't create hub labels, because graph or reverse graph is empty" << std::endl;
+        std::cout << "Can't create hub labels, because graph or reverse graph is empty" << "\n";
         return;
     }
 
@@ -596,15 +596,15 @@ void Graph::createHubLabelsWithoutIS() {
 
     auto end = std::chrono::high_resolution_clock::now();
     auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - begin);
-    std::cout << "Finished creating hub labels. Took " << elapsed.count() << " milliseconds " << std::endl;
+    std::cout << "Finished creating hub labels. Took " << elapsed.count() << " milliseconds " << "\n";
 }
 
 void Graph::createHubLabelsWithIS() {
-    std::cout << "Started creating hub labels." << std::endl;
+    std::cout << "Started creating hub labels." << "\n";
     auto begin = std::chrono::high_resolution_clock::now();
 
     if (m_graph.empty() || m_reverse_graph.empty()) {
-        std::cout << "Can't create hub labels, because graph or reverse graph is empty" << std::endl;
+        std::cout << "Can't create hub labels, because graph or reverse graph is empty" << "\n";
         return;
     }
 
@@ -766,17 +766,17 @@ void Graph::createHubLabelsWithIS() {
             }
         }
         num_calculated += static_cast<uint32_t>(level_buckets[i].size());
-        // std::cout << "Finished Hub Labels for " << num_calculated << " num of nodes." << std::endl;
+        // std::cout << "Finished Hub Labels for " << num_calculated << " num of nodes." << "\n";
     }
 
     auto end = std::chrono::high_resolution_clock::now();
     auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - begin);
-    std::cout << "Finished creating hub labels. Took " << elapsed.count() << " milliseconds " << std::endl;
+    std::cout << "Finished creating hub labels. Took " << elapsed.count() << " milliseconds " << "\n";
 }
 
 std::pair<uint32_t, uint32_t> Graph::hubLabelQuery(QueryData& data) {
     if (data.m_start < 0 || data.m_end < 0) {
-        std::cout << "Invalid start or end nodes!" << std::endl;
+        std::cout << "Invalid start or end nodes!" << "\n";
         return std::make_pair(-1, -1);
     }
 
@@ -784,7 +784,7 @@ std::pair<uint32_t, uint32_t> Graph::hubLabelQuery(QueryData& data) {
         data.reset();
     }
 
-    std::cout << "Started Hub Query." << std::endl;
+    std::cout << "Started Hub Query." << "\n";
 
     auto begin = std::chrono::high_resolution_clock::now();
 
@@ -821,26 +821,26 @@ std::pair<uint32_t, uint32_t> Graph::hubLabelQuery(QueryData& data) {
 
     auto end = std::chrono::high_resolution_clock::now();
     auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin);
-    std::cout << "Finished Hub Label query. Took " << elapsed.count() << " nanoseconds " << std::endl;
+    std::cout << "Finished Hub Label query. Took " << elapsed.count() << " nanoseconds " << "\n";
 
     return std::make_pair(best_fwd_index, best_bwd_index);
 }
 
 void Graph::hubLabelExtractPath(QueryData& data, std::pair<int, int> hub_indices) {
     if (data.m_distance == std::numeric_limits<int>::max() || data.m_distance == -1 || data.m_meeting_node == -1) {
-        std::cout << "Can't return path for invalid data!" << std::endl;
+        std::cout << "Can't return path for invalid data!" << "\n";
         return;
     }
 
     data.m_shortest_path.clear();
     std::vector<std::tuple<int, int, bool>> fwd_edges;
 
-    std::cout << "Debug before gathering edges fwd" << std::endl;
+    std::cout << "Debug before gathering edges fwd" << "\n";
 
     int cur_node = data.m_start;
     auto cur_fwd_label = m_fwd_hub_labels[hub_indices.first];
     while (cur_node != data.m_meeting_node) {
-        std::cout << "Cur Node FWD: " << cur_node << std::endl;
+        std::cout << "Cur Node FWD: " << cur_node << "\n";
 
         Edge e = m_graph[cur_node][std::get<2>(cur_fwd_label)];
         fwd_edges.push_back(std::make_tuple(cur_node, std::get<2>(cur_fwd_label), true));
@@ -848,7 +848,7 @@ void Graph::hubLabelExtractPath(QueryData& data, std::pair<int, int> hub_indices
         cur_fwd_label = m_fwd_hub_labels[std::get<3>(cur_fwd_label)];
     }
 
-    std::cout << "Debug before unpacking edges fwd" << std::endl;
+    std::cout << "Debug before unpacking edges fwd" << "\n";
 
     std::vector<int> fwd_path;
     // resolve shortcut edges
@@ -864,7 +864,7 @@ void Graph::hubLabelExtractPath(QueryData& data, std::pair<int, int> hub_indices
         }
     }
 
-    std::cout << "Debug before gathering edges bwd" << std::endl;
+    std::cout << "Debug before gathering edges bwd" << "\n";
     std::vector<std::tuple<int, int, bool>> bwd_edges;
     cur_node = data.m_end;
     auto cur_bwd_label = m_bwd_hub_labels[hub_indices.second];
@@ -873,12 +873,12 @@ void Graph::hubLabelExtractPath(QueryData& data, std::pair<int, int> hub_indices
         bwd_edges.push_back(std::make_tuple(cur_node, std::get<2>(cur_bwd_label), false));
         cur_node = e.m_target;
         cur_bwd_label = m_bwd_hub_labels[std::get<3>(cur_bwd_label)];
-        std::cout << "Cur Node BWD: " << cur_node << std::endl;
+        std::cout << "Cur Node BWD: " << cur_node << "\n";
     }
 
     std::reverse(bwd_edges.begin(), bwd_edges.end());
 
-    std::cout << "Debug before unpacking edges bwd" << std::endl;
+    std::cout << "Debug before unpacking edges bwd" << "\n";
     std::vector<int> bwd_path;
     if (bwd_edges.empty()) {
         bwd_path.push_back(data.m_end);
@@ -891,7 +891,7 @@ void Graph::hubLabelExtractPath(QueryData& data, std::pair<int, int> hub_indices
         }
     }
 
-    std::cout << "Debug before combining paths" << std::endl;
+    std::cout << "Debug before combining paths" << "\n";
     // combine the paths
     for (size_t i = 0; i < fwd_path.size(); ++i) {
         data.m_shortest_path.push_back(fwd_path[i]);
@@ -1064,12 +1064,12 @@ void Graph::createReverseGraphCH() {
 }
 
 void Graph::createCHwithoutIS(Heuristic heuristic) {
-    std::cout << "Started creating CH." << std::endl;
+    std::cout << "Started creating CH." << "\n";
 
     auto begin = std::chrono::high_resolution_clock::now();
 
     if (m_graph.empty()) {
-        std::cout << "Can't create CH, because graph is empty." << std::endl;
+        std::cout << "Can't create CH, because graph is empty." << "\n";
         return;
     }
     m_node_level.clear();
@@ -1176,16 +1176,16 @@ void Graph::createCHwithoutIS(Heuristic heuristic) {
 
     auto end = std::chrono::high_resolution_clock::now();
     auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(end - begin);
-    std::cout << "Finished creating CH. Took " << elapsed.count() << " seconds" << std::endl;
+    std::cout << "Finished creating CH. Took " << elapsed.count() << " seconds" << "\n";
 }
 
 void Graph::createCHwithIS(Heuristic heuristic) {
-    std::cout << "Started creating CH." << std::endl;
+    std::cout << "Started creating CH." << "\n";
 
     auto begin = std::chrono::high_resolution_clock::now();
 
     if (m_graph.empty()) {
-        std::cout << "Can't create CH, because graph is empty." << std::endl;
+        std::cout << "Can't create CH, because graph is empty." << "\n";
         return;
     }
     m_node_level.clear();
@@ -1333,14 +1333,14 @@ void Graph::createCHwithIS(Heuristic heuristic) {
         }
 
         ++cur_level;
-        // std::cout << "Finished contracting: " << num_contracted << "\n";
+        std::cout << "Finished contracting: " << num_contracted << "\n";
     }
 
     m_contr_data.clear();
     omp_set_num_threads(m_num_threads);
     auto end = std::chrono::high_resolution_clock::now();
     auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(end - begin);
-    std::cout << "Finished creating CH. Took " << elapsed.count() << " seconds" << std::endl;
+    std::cout << "Finished creating CH. Took " << elapsed.count() << " seconds" << "\n";
 }
 
 void Graph::createContractionGraphs() {
