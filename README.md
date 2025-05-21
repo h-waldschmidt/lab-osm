@@ -1,33 +1,22 @@
 # Lab Course Algorithms on OSM Data
 
-
-## Cloning
-
-Remember to recursively clone the repository to include `vcpkg`.
-
-```
-git clone --recursive https://github.com/h-waldschmidt/cmake-vcpkg-template.git
-```
-
-If you didn't clone recursively just run:
-```
-git submodule update --init
-```
-
-To update the `vcpkg` submodule do:
-
-```
-git submodule update --remote --merge
-```
+> [!NOTE]  
+> Don't forget to clone with `--recursive`
 
 ## Building
+Docker is just used for building, so we don't need to install all the dependencies.
 
-1. `cmake --preset Release`
-2. `cmake --build --preset Release`
+1. `git clone --recursive https://github.com/h-waldschmidt/lab-osm.git`
+2. `docker build -t labosm-builder .`
+3. `docker run --rm -v ./:/app labosm-builder`
 
-## Docker
+## Running
+Run `./build/labosm` to see most usage examples.
 
-TODO:
+Example workflow looks like this to generate graph with `6M` points and run simpleserver with just dijkstra algorithm:
+1. `./build/labosm generate_points planet-coastlinespbf-cleaned.osm.pbf output/6M 6000000`
+2. `./build/labosm points_to_fmi output/6M_filtered_points.geojson output/6M_graph.fmi`
+3. `./build/labosm simpleserver output/6M_graph.fmi`
 
 ## Benchmarks
 - Point in Polygon test with 16 Threads 6M Points: `36616160ms = 10h 10m`
@@ -38,3 +27,10 @@ TODO:
   - Results in `23117984` Edges
 - Generating FMI Graph with 16 Threads and `4157317` Points: `9037ms = 9s`
   - Results in `22612494` Edges
+
+## Code Structure
+
+> [!NOTE]  
+> Look into the header files for Documentation of most functions
+
+

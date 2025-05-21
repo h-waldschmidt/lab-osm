@@ -7,6 +7,7 @@
 
 namespace labosm {
 
+// used for water testing as a first step to avoid unnecessary calculations
 struct BoudingBox {
     double min_lat;
     double max_lat;
@@ -23,6 +24,8 @@ struct BoudingBox {
     }
 };
 
+// used for in water testing
+// transforms lat/lon to 3D Cartesian coordinates
 struct Vec3 {
     double x, y, z;
 
@@ -48,10 +51,12 @@ struct Vec3 {
 
 constexpr double R_EARTH = 6'371'000.0;  // metres
 
+// used for nanoflann KD-tree
 struct PointXYZ {
     double x, y, z;
 };  // unit-sphere Cartesian
 
+// used for nanoflann KD-tree
 struct PointCloud {
     std::vector<PointXYZ> pts;
 
@@ -68,6 +73,7 @@ struct PointCloud {
     }
 };
 
+// Use the harvesine formula to calculate the great-circle distance between two points on the Earth
 inline int greatCircleDistance(double lat1, double lon1, double lat2, double lon2) {
     double dLat = lat2 - lat1, dLon = lon2 - lon1;
     double a = std::pow(std::sin(dLat * 0.5), 2) + std::pow(std::sin(dLon * 0.5), 2) * std::cos(lat1) * std::cos(lat2);
@@ -88,7 +94,7 @@ struct Edge {
     bool isShortcut() const { return (std::get<0>(m_child_1) != -1) && (std::get<0>(m_child_2) != -1); }
 };
 
-// Edge struct only used when creating CH
+// ContractionEdge struct only used when creating CH
 struct ContractionEdge {
     int m_target;  // corresponds to index of node in graph data structure
     int m_cost;
@@ -107,7 +113,6 @@ struct ContractionEdge {
 
 /**
  * @brief Used for calculating the CH
- *
  */
 struct ContractionData {
     std::vector<bool> m_outgoing;
@@ -161,7 +166,6 @@ struct DijkstraQueryData {
 /**
  * @brief Used for distances and path queries.
  * Pre defining all data allows for many queries at a time without allocating/deallocating a huge amount of memory
- *
  */
 struct QueryData {
     int m_start;

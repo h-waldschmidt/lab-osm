@@ -203,45 +203,6 @@ void Graph::dijkstraExtractPath(DijkstraQueryData& data) {
     std::reverse(data.m_path.begin(), data.m_path.end());
 }
 
-void Graph::bidirectionalDijkstraGetPath(QueryData& data) {
-    if (!(data.m_distance < std::numeric_limits<int>::max() || data.m_distance > -1)) {
-        std::cout << "Can't return path for invalid data!" << "\n";
-        return;
-    }
-
-    data.m_shortest_path.clear();
-
-    std::vector<int> fwd_path;
-    std::vector<int> bwd_path;
-
-    int cur_node = data.m_meeting_node;
-    while (cur_node != data.m_start) {
-        cur_node = data.m_fwd_prev_edge[cur_node].first;
-        fwd_path.push_back(cur_node);
-    }
-
-    cur_node = data.m_meeting_node;
-    while (cur_node != data.m_end) {
-        cur_node = data.m_bwd_prev_edge[cur_node].first;
-        bwd_path.push_back(cur_node);
-    }
-
-    for (int i = fwd_path.size() - 1; i >= 0; --i) {
-        data.m_shortest_path.push_back(fwd_path[i]);
-    }
-
-    data.m_shortest_path.push_back(data.m_meeting_node);
-
-    for (int i = 0; i < bwd_path.size(); ++i) {
-        data.m_shortest_path.push_back(bwd_path[i]);
-    }
-    std::cout << "Level of Meeting Node: " << m_node_level[data.m_meeting_node] << "\n";
-    for (size_t i = 0; i < data.m_shortest_path.size(); i++) {
-        std::cout << "NodeID: " << data.m_shortest_path[i] << " Level: " << m_node_level[data.m_shortest_path[i]]
-                  << "\n";
-    }
-}
-
 void Graph::contractionHierarchyQuery(QueryData& data) {
     if (data.m_start < 0 || data.m_end < 0) {
         std::cout << "Invalid start or end nodes!" << "\n";

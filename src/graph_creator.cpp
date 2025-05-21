@@ -11,8 +11,9 @@
 
 namespace labosm {
 
-void GraphCreator::generatePoints(const std::string& coastlines, int num_points, const std::string& output_file_prefix,
-                                  bool image_based_filtering, const std::string& image_path) {
+void GraphCreator::generatePointsAndFilter(const std::string& coastlines, int num_points,
+                                           const std::string& output_file_prefix, bool image_based_filtering,
+                                           const std::string& image_path) {
     auto start_reading = std::chrono::steady_clock::now();
 
     osmium::io::Reader reader{coastlines, osmium::osm_entity_bits::node | osmium::osm_entity_bits::way};
@@ -37,7 +38,7 @@ void GraphCreator::generatePoints(const std::string& coastlines, int num_points,
     std::cout << "Merging time: "
               << std::chrono::duration_cast<std::chrono::milliseconds>(end_merging - start_merging).count() << " ms\n";
 
-    write_geojson(output_file_prefix + "_coastlines.geojson", m_coastline_nodes, m_coastline_ways);
+    write_coastlines_to_geojson(output_file_prefix + "_coastlines.geojson", m_coastline_nodes, m_coastline_ways);
 
     auto points = generatePointsOnSphere(num_points);
 
@@ -94,7 +95,7 @@ void GraphCreator::generateGraph(const std::string& points_file, const std::stri
     auto end = std::chrono::steady_clock::now();
     std::cout << "Graph creation took: " << std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count()
               << " ms\n";
-    printGraphToFMI(points, graph, output_file_path);
+    writeGraphToFMI(points, graph, output_file_path);
 }
 
 // https://mathworld.wolfram.com/SpherePointPicking.html
@@ -123,7 +124,8 @@ std::vector<std::pair<double, double>> GraphCreator::generatePointsOnSphere(int 
     return points;
 }
 
-void GraphCreator::write_geojson(const std::string& output_file, const NodeMap& nodes, const WayList& ways) {
+void GraphCreator::write_coastlines_to_geojson(const std::string& output_file, const NodeMap& nodes,
+                                               const WayList& ways) {
     std::ofstream out(output_file);
     out << R"({"type": "FeatureCollection", "features": [)";
 
@@ -331,7 +333,7 @@ std::vector<std::pair<double, double>> GraphCreator::filterOutsideWater(
     return filtered_points;
 }
 
-// Projection: Equirectangular (aka Plate Carrée, EPSG:4326)
+// Projection: Equirectangular (aka Plate Carrée)
 std::pair<int, int> GraphCreator::latlon_to_pixel(double lat, double lon, int img_width, int img_height) {
     // Normalize longitude from [−180, 180] to [0, 1]
     double x = (lon + 180.0) / 360.0;
@@ -507,7 +509,7 @@ std::vector<std::vector<labosm::Edge>> GraphCreator::createGraph(std::vector<std
     return graph;
 }
 
-void GraphCreator::printGraphToFMI(const std::vector<std::pair<double, double>>& points,
+void GraphCreator::writeGraphToFMI(const std::vector<std::pair<double, double>>& points,
                                    const std::vector<std::vector<labosm::Edge>>& graph, const std::string& filename) {
     std::ofstream out(filename);
     out << "# Timestamp: " << std::time(nullptr) << '\n';

@@ -40,7 +40,8 @@ int main(int argc, char* argv[]) {
         std::cout << "Example: ./labosm generate_points input.osm.pbf output_prefix num_points image_path\n";
         std::cout << "Generates num_points random points on the sphere, filters them based on the given coastlines and "
                      "writes them to a geojson file\n";
-        std::cout << "Creates the files output_prefix_coastlines.geojson and output_prefix_filtered_points.geojson\n";
+        std::cout << "Creates the files output_prefix_coastlines.geojson, output_prefix_points.geojson and "
+                     "output_prefix_filtered_points.geojson\n";
         std::cout << "If image_path is given, the points are filtered based on the image\n" << "\n";
 
         std::cout << "Example: ./labosm points_to_fmi filtered_points.geojson output.fmi\n" << "\n";
@@ -48,6 +49,7 @@ int main(int argc, char* argv[]) {
 
         // TODO: Take fmi file as input, generate contraction graph and write it to a fmi file
         // TODO: Support contraction graph as input for server
+        // TODO: Add memory usage values to server
 
         std::cout << "Example: ./labosm simpleserver input.fmi" << "\n";
         std::cout << "Simple Server only supports dijkstra for routing\n" << "\n";
@@ -71,13 +73,13 @@ int main(int argc, char* argv[]) {
         labosm::server::advancedServer(argv[2]);
         return 0;
     } else if (argv[1] == std::string("generate_points")) {
-        if (argc < 4 || argc > 5) {
+        if (argc < 5 || argc > 6) {
             std::cerr << "Usage: ./labosm generate_points input.osm.pbf output_prefix num_points [image_path]" << "\n";
             return 1;
         }
         labosm::GraphCreator graph_creator;
-        std::string image_path = (argc == 5) ? argv[4] : "";
-        graph_creator.generatePoints(argv[2], std::stoi(argv[3]), argv[2], image_path != "", image_path);
+        std::string image_path = (argc == 6) ? argv[5] : "";
+        graph_creator.generatePointsAndFilter(argv[2], std::stoi(argv[4]), argv[3], image_path != "", image_path);
         return 0;
     } else if (argv[1] == std::string("points_to_fmi")) {
         if (argc != 4) {

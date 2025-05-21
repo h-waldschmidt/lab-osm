@@ -1,9 +1,9 @@
-FROM debian:buster-slim
+FROM debian:latest
 
-RUN apt-get update; \
+RUN apt-get update && \
     apt-get install -y git zip curl unzip tar build-essential \
-    pkg-config ninja-build libosmium2-dev libprotobuf-dev protobuf-compiler zlib1g-dev libosmpbf-dev libnanoflann-dev; \
-    apt-get clean;
+    pkg-config ninja-build libosmium2-dev libprotobuf-dev protobuf-compiler zlib1g-dev libosmpbf-dev libnanoflann-dev &&\
+    apt-get clean
 
 # install newest cmake version
 ARG CMAKE_VERSION=3.28.3
@@ -17,5 +17,4 @@ VOLUME [ "/app" ]
 WORKDIR /app
 
 ENTRYPOINT cmake --preset Release && \
-    cmake --build --preset Release && \
-    ./build/labosm
+    cmake --build --preset Release

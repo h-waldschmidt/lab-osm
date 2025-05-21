@@ -31,9 +31,7 @@ void simpleServer(const std::string& fmi_file) {
                             "application/json");
         } else {
             res.status = 400;
-            res.set_content(R"({"error": "Missing lat or lon
-parameter"})",
-                            "application/json");
+            res.set_content(R"({"error": "Missing lat or lon parameter"})", "application/json");
         }
     });
 
@@ -80,9 +78,7 @@ parameter"})",
                             "application/json");
         } else {
             res.status = 400;
-            res.set_content(R"({"error": "Missing start or end
-parameter"})",
-                            "application/json");
+            res.set_content(R"({"error": "Missing start or end parameter"})", "application/json");
         }
     });
 
@@ -117,9 +113,7 @@ void advancedServer(const std::string& fmi_file) {
                             "application/json");
         } else {
             res.status = 400;
-            res.set_content(R"({"error": "Missing lat or lon
-parameter"})",
-                            "application/json");
+            res.set_content(R"({"error": "Missing lat or lon parameter"})", "application/json");
         }
     });
 
@@ -149,6 +143,10 @@ parameter"})",
             start_time = std::chrono::steady_clock::now();
             // TODO: There still seems to be a bug in the path extraction
             // It gets stuck at one of the while loops
+            // this occurs very rarely
+            // I think this might be an issue due to multiple requests at the same time
+            // So a mutex might be needed
+
             g.contractionHierarchyExtractPath(data);
             end_time = std::chrono::steady_clock::now();
             std::cout << "CH Path Extraction Time: "
@@ -203,6 +201,10 @@ parameter"})",
             start_time = std::chrono::steady_clock::now();
             // TODO: There still seems to be a bug in the path extraction
             // It gets stuck at one of the while loops
+            // this occurs very rarely
+            // I think this might be an issue due to multiple requests at the same time
+            // So a mutex might be needed
+
             g.hubLabelExtractPath(data, hub_indices);
             end_time = std::chrono::steady_clock::now();
             std::cout << "Hub Label Path Extraction Time: "
