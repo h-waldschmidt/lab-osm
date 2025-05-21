@@ -10,22 +10,6 @@
 #include "../third-party/stb_image.h"
 
 namespace labosm {
-void CoastlineHandler::way(const osmium::Way& way, NodeMap& coastline_nodes, WayList& coastline_ways) {
-    if (way.tags().has_tag("natural", "coastline")) {
-        std::vector<uint64_t> way_nodes;
-        for (const auto& node_ref : way.nodes()) {
-            osmium::Location loc = node_ref.location();
-            if (loc.valid()) {
-                uint64_t id = node_ref.ref();
-                way_nodes.push_back(id);
-                coastline_nodes[id] = {loc.lon(), loc.lat()};
-            }
-        }
-        if (!way_nodes.empty()) {
-            coastline_ways[way_nodes.front()] = way_nodes;
-        }
-    }
-}
 
 void GraphCreator::generatePoints(const std::string& coastlines, int num_points, const std::string& output_file_prefix,
                                   bool image_based_filtering, const std::string& image_path) {
@@ -38,7 +22,7 @@ void GraphCreator::generatePoints(const std::string& coastlines, int num_points,
     osmium::handler::NodeLocationsForWays<index_type> location_handler{index};
     location_handler.ignore_errors();
 
-    CoastlineHandler handler;
+    CoastlineHandler handler(&m_coastline_nodes, &m_coastline_ways);
 
     osmium::apply(reader, location_handler, handler);
     reader.close();
@@ -56,6 +40,20 @@ void GraphCreator::generatePoints(const std::string& coastlines, int num_points,
     write_geojson(output_file_prefix + "_coastlines.geojson", m_coastline_nodes, m_coastline_ways);
 
     auto points = generatePointsOnSphere(num_points);
+
+    std::ofstream out_points(output_file_prefix + "_points.geojson");
+    out_points << R"({"type": "FeatureCollection", "features": [)";
+    for (size_t i = 0; i < points.size(); ++i) {
+        if (i > 0) out_points << ",";
+        // point
+        out_points << R"({"type": "Feature","geometry":{"type": "Point","coordinates":[)";
+        out_points << points[i].first << "," << points[i].second << "]},";
+        out_points << R"("properties":{}})";
+    }
+    out_points << "]}" << '\n';
+    out_points.close();
+    std::cout << "Points written to " << output_file_prefix + "_points.geojson" << '\n';
+    std::cout << "Generated " << points.size() << " points\n";
 
     auto start_filtering = std::chrono::steady_clock::now();
 
@@ -466,7 +464,9 @@ std::vector<std::vector<labosm::Edge>> GraphCreator::createGraph(std::vector<std
             double lat1a = lat1 + 90.0;
             double lon1a = lon1 + 180.0;
 
+            // south test is easy
             bool south = lat2a < lat1a;
+            // west test either by longitude or by wrapping
             bool west = (lon2a < lon1a) || (lon1a < 60.0 && lon2a > 300.0);
             int quadrant = south ? (west ? 0 : 1) : (west ? 2 : 3);
 
@@ -494,7 +494,7 @@ std::vector<std::vector<labosm::Edge>> GraphCreator::createGraph(std::vector<std
 
             bool alreadyThere = false;
             for (const auto& rev : graph[j])
-                if (rev.m_target == static_cast<int>(i)) {  // reverse exists?
+                if (rev.m_target == static_cast<int>(i)) {
                     alreadyThere = true;
                     break;
                 }

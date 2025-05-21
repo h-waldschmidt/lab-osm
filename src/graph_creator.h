@@ -19,7 +19,29 @@ using KDTree =
 
 class CoastlineHandler : public osmium::handler::Handler {
    public:
-    void way(const osmium::Way& way, NodeMap& coastline_nodes, WayList& coastline_ways);
+    CoastlineHandler(NodeMap* nodes, WayList* ways) : coastline_nodes(nodes), coastline_ways(ways) {}
+    ~CoastlineHandler() = default;
+
+    void way(const osmium::Way& way) {
+        if (way.tags().has_tag("natural", "coastline")) {
+            std::vector<uint64_t> way_nodes;
+            for (const auto& node_ref : way.nodes()) {
+                osmium::Location loc = node_ref.location();
+                if (loc.valid()) {
+                    uint64_t id = node_ref.ref();
+                    way_nodes.push_back(id);
+                    (*coastline_nodes)[id] = {loc.lon(), loc.lat()};
+                }
+            }
+            if (!way_nodes.empty()) {
+                (*coastline_ways)[way_nodes.front()] = way_nodes;
+            }
+        }
+    }
+
+   private:
+    NodeMap* coastline_nodes;
+    WayList* coastline_ways;
 };
 
 class GraphCreator {
