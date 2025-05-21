@@ -7,7 +7,9 @@
 
 namespace labosm {
 
-// used for water testing as a first step to avoid unnecessary calculations
+/**
+ * @brief BoudingBox struct used for filtering points that are outside the water
+ */
 struct BoudingBox {
     double min_lat;
     double max_lat;
@@ -24,8 +26,9 @@ struct BoudingBox {
     }
 };
 
-// used for in water testing
-// transforms lat/lon to 3D Cartesian coordinates
+/**
+ * @brief Vec3 struct used for converting lat/lon to 3D coordinates
+ */
 struct Vec3 {
     double x, y, z;
 
@@ -54,13 +57,13 @@ constexpr double R_EARTH = 6'371'000.0;  // metres
 // used for nanoflann KD-tree
 struct PointXYZ {
     double x, y, z;
-};  // unit-sphere Cartesian
+};
 
 // used for nanoflann KD-tree
 struct PointCloud {
     std::vector<PointXYZ> pts;
 
-    /* nanoflann API ---------- */
+    // nanoflann API
     inline size_t kdtree_get_point_count() const { return pts.size(); }
 
     inline double kdtree_get_pt(size_t idx, int dim) const {
@@ -84,6 +87,8 @@ inline int greatCircleDistance(double lat1, double lon1, double lat2, double lon
 struct Edge {
     int m_target;  // corresponds to index of node in graph data structure
     int m_cost;
+
+    // represents the underlying edges if this is a shortcut
     std::tuple<int, int, bool> m_child_1;
     std::tuple<int, int, bool> m_child_2;
     Edge(int target, int cost)
@@ -98,7 +103,7 @@ struct Edge {
 struct ContractionEdge {
     int m_target;  // corresponds to index of node in graph data structure
     int m_cost;
-    // data used to find the underlying later on
+    // data used to find the underlying edge if this is a shortcut
     int m_contraction_node;
     int m_num_underlying_arcs;  // used for the mixed heuristic
     ContractionEdge(int target, int cost, int contraction_node, int num_underlying_arcs)
@@ -113,6 +118,7 @@ struct ContractionEdge {
 
 /**
  * @brief Used for calculating the CH
+ * Similar to the QueryData struct, to avoid allocating/deallocating a huge amount of memory
  */
 struct ContractionData {
     std::vector<bool> m_outgoing;
@@ -132,7 +138,10 @@ struct ContractionData {
     ContractionData() = default;
 };
 
-// define dijkstra query data for efficient memory reuse for multiple queries
+/**
+ * @brief Used for dijkstra distance and path queries.
+ * Pre defining all data allows for many queries at a time without allocating/deallocating a huge amount of memory
+ */
 struct DijkstraQueryData {
     int m_start;
     int m_end;

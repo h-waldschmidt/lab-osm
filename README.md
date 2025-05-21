@@ -13,6 +13,8 @@ Docker is just used for building, so we don't need to install all the dependenci
 ## Running
 Run `./build/labosm` to see most usage examples.
 
+For image based filtering download [this image from NASA](https://eoimages.gsfc.nasa.gov/images/imagerecords/73000/73963/gebco_08_rev_bath_21600x10800.png).
+
 Example workflow looks like this to generate graph with `6M` points and run simpleserver with just dijkstra algorithm:
 1. `./build/labosm generate_points planet-coastlinespbf-cleaned.osm.pbf output/6M 6000000`
 2. `./build/labosm points_to_fmi output/6M_filtered_points.geojson output/6M_graph.fmi`
@@ -28,9 +30,41 @@ Example workflow looks like this to generate graph with `6M` points and run simp
 - Generating FMI Graph with 16 Threads and `4157317` Points: `9037ms = 9s`
   - Results in `22612494` Edges
 
+## Images: TODO
+
+TODO
+
 ## Code Structure
 
 > [!NOTE]  
-> Look into the header files for Documentation of most functions
+> Look into the header `.h` files for Documentation of most functions
+
+### `main.cpp`
+
+Then entrypoint for everything (osm preprocessing, graph creation and the routing servers).
+
+### `helper.h`
+
+Defines a bunch of structs and small helper functions
 
 
+### `graph_creator.h` and `graph_creator.cpp`
+
+Provides all the OSM, point in water filtering and graph creation mechanisms.
+Takes the `*.osm.pbf` coastlines files (and image if image based filtering is used) as input, creates `n` random points, filters out all the points that are not in water and then finally creates a graph from the filtered points and writes them to a `*.fmi` file.
+
+### `graph.h` and `graph.cpp`
+
+Takes an `*.fmi` files as input and creates the general graph datastructure from it.
+More importantly provides functions for contraction hierarchy and hub label calculation.
+Then based on these datastructer route planning using vanilla dijkstra, contraction hierarchies and hub labeling can be done.
+
+### `server.h` and `server.cpp`
+
+Wraps a server around the `graph.h` that is called from the frontend.
+Provides two modes the `simpleserver` for just dijkstra routing and the `advancedserver` for CH and Hub-Label routing.
+
+
+### `index.html` and `index.js`
+
+Provide the frontend to display routes with leaflet.js.

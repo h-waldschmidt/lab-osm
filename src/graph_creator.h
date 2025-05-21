@@ -126,7 +126,7 @@ class GraphCreator {
      * @param nodes The map of nodes (id -> coordinates).
      * @param ways The map of ways (id -> list of node ids).
      */
-    void write_coastlines_to_geojson(const std::string& output_file, const NodeMap& nodes, const WayList& ways);
+    void writeCoastlinesToGeojson(const std::string& output_file, const NodeMap& nodes, const WayList& ways);
 
     /**
      * @brief Merge the ways in the coastline data.

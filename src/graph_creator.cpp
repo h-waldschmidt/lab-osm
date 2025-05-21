@@ -16,6 +16,7 @@ void GraphCreator::generatePointsAndFilter(const std::string& coastlines, int nu
                                            const std::string& image_path) {
     auto start_reading = std::chrono::steady_clock::now();
 
+    // Extract coastlines from OSM data using osmium
     osmium::io::Reader reader{coastlines, osmium::osm_entity_bits::node | osmium::osm_entity_bits::way};
 
     using index_type = osmium::index::map::SparseMemArray<osmium::unsigned_object_id_type, osmium::Location>;
@@ -38,7 +39,7 @@ void GraphCreator::generatePointsAndFilter(const std::string& coastlines, int nu
     std::cout << "Merging time: "
               << std::chrono::duration_cast<std::chrono::milliseconds>(end_merging - start_merging).count() << " ms\n";
 
-    write_coastlines_to_geojson(output_file_prefix + "_coastlines.geojson", m_coastline_nodes, m_coastline_ways);
+    writeCoastlinesToGeojson(output_file_prefix + "_coastlines.geojson", m_coastline_nodes, m_coastline_ways);
 
     auto points = generatePointsOnSphere(num_points);
 
@@ -124,8 +125,7 @@ std::vector<std::pair<double, double>> GraphCreator::generatePointsOnSphere(int 
     return points;
 }
 
-void GraphCreator::write_coastlines_to_geojson(const std::string& output_file, const NodeMap& nodes,
-                                               const WayList& ways) {
+void GraphCreator::writeCoastlinesToGeojson(const std::string& output_file, const NodeMap& nodes, const WayList& ways) {
     std::ofstream out(output_file);
     out << R"({"type": "FeatureCollection", "features": [)";
 
@@ -155,9 +155,11 @@ void GraphCreator::merge_ways() {
     size_t old_size = m_coastline_ways.size();
     while (true) {
         for (auto it1 = m_coastline_ways.begin(); it1 != m_coastline_ways.end(); ++it1) {
+            // take the last node of the way
             uint64_t last_id = it1->second.back();
             if (last_id == it1->first) continue;
 
+            // find the way that has the last node as first node and merge them
             auto it2 = m_coastline_ways.find(last_id);
             if (it2 != m_coastline_ways.end()) {
                 it1->second.insert(it1->second.end(), it2->second.begin(), it2->second.end());
@@ -173,10 +175,9 @@ void GraphCreator::merge_ways() {
     }
 }
 
-// https://github.com/lcx366/SphericalPolygon/blob/master/sphericalpolygon/inside_polygon.py
 std::vector<std::pair<double, double>> GraphCreator::filterOutsideWater(
     const std::vector<std::pair<double, double>>& points) {
-    // generate bouding boxes for the ways
+    // generate bouding boxes for the ways for early termination
     std::vector<labosm::BoudingBox> boxes;
     boxes.reserve(m_coastline_ways.size());
     for (const auto& [first, way] : m_coastline_ways) {
@@ -222,9 +223,9 @@ std::vector<std::pair<double, double>> GraphCreator::filterOutsideWater(
 
     int num_threads = 16;
     omp_set_num_threads(num_threads);
-    std::vector<std::vector<int>> inside_points_per_thread(num_threads);
+    std::vector<std::vector<int>> in_water_points_per_thread(num_threads);
     for (int i = 0; i < num_threads; ++i) {
-        inside_points_per_thread[i].reserve(points.size() / num_threads);
+        in_water_points_per_thread[i].reserve(points.size() / num_threads);
     }
 
     const double deg2rad = M_PI / 180.0;
@@ -232,7 +233,7 @@ std::vector<std::pair<double, double>> GraphCreator::filterOutsideWater(
     // check if points are inside one of the polygons (if yes they are not in the water and must be filtered out)
 #pragma omp parallel for
     for (int i = 0; i < points.size(); ++i) {
-        auto& inside_points = inside_points_per_thread[omp_get_thread_num()];
+        auto& in_water_points = in_water_points_per_thread[omp_get_thread_num()];
 
         const auto& [lon, lat] = points[i];
 
@@ -252,6 +253,9 @@ std::vector<std::pair<double, double>> GraphCreator::filterOutsideWater(
         double sz = std::sin(theta_z);
         double cy = std::cos(theta_y);
         double sy = std::sin(theta_y);
+
+        // Approach taken from:
+        // https://github.com/lcx366/SphericalPolygon/blob/master/sphericalpolygon/inside_polygon.py
 
         // Build the composite rotation matrix R = Ry * Rz.
         // The 3x3 matrix is computed as:
@@ -305,6 +309,7 @@ std::vector<std::pair<double, double>> GraphCreator::filterOutsideWater(
                 previous_lon_transformed = cur_lon_transformed;
             }
 
+            // NOTE: can adjust accuracy but this should be fine
             if (fabs(sum_angle - two_pi) < 1e-4 || fabs(sum_angle + two_pi) < 1e-4) {
                 inside = true;
                 break;
@@ -315,17 +320,17 @@ std::vector<std::pair<double, double>> GraphCreator::filterOutsideWater(
             continue;
         }
 
-        inside_points.push_back(i);
+        in_water_points.push_back(i);
 
         if (i % 1000 == 0) {
-            std::cout << "Thread " << omp_get_thread_num() << " processed " << inside_points.size() << " points\n";
+            std::cout << "Thread " << omp_get_thread_num() << " processed " << in_water_points.size() << " points\n";
         }
     }
 
     // collect all points from all threads
     std::vector<std::pair<double, double>> filtered_points;
-    for (const auto& inside_points : inside_points_per_thread) {
-        for (const auto& index : inside_points) {
+    for (const auto& in_water_points : in_water_points_per_thread) {
+        for (const auto& index : in_water_points) {
             filtered_points.push_back(points[index]);
         }
     }
@@ -367,7 +372,10 @@ std::vector<std::pair<double, double>> GraphCreator::filterOutsideWaterImageBase
 
         auto [px, py] = latlon_to_pixel(lat, lon, width, height);
 
-        // skip if white
+        // skip if white, since it is land
+        // assumes this image:
+        // https://eoimages.gsfc.nasa.gov/images/imagerecords/73000/73963/gebco_08_rev_bath_21600x10800.png
+        // other versions might have black as land
         if (data[py * width * channels + px * channels] == 255 &&
             data[py * width * channels + px * channels + 1] == 255 &&
             data[py * width * channels + px * channels + 2] == 255) {
@@ -415,7 +423,7 @@ std::vector<std::vector<labosm::Edge>> GraphCreator::createGraph(std::vector<std
     const double thetaMax = MAX_EDGE / R_EARTH;                       // rad
     const double chord2 = 4 * std::pow(std::sin(thetaMax * 0.5), 2);  // unit-sphere²
 
-    /* ---------- 2. build point cloud in Cartesian coords ------------ */
+    // build point cloud with 3D coordinates
     const size_t N = pointsDeg.size();
     std::vector<std::pair<double, double>> pointsRad(N);
     PointCloud cloud;
@@ -431,23 +439,23 @@ std::vector<std::vector<labosm::Edge>> GraphCreator::createGraph(std::vector<std
         cloud.pts[i] = {std::cos(lon) * clat, std::sin(lon) * clat, std::sin(lat)};
     }
 
-    /* ---------- 3. build KD-tree (single threaded, few ms) ---------- */
+    // build KDTree index
     KDTree index(3, cloud, {10 /*max leaf*/});
     index.buildIndex();
 
-    /* ---------- 4. radius search in parallel ----------------------- */
+    // radius search
     std::vector<std::vector<labosm::Edge>> graph(N);
 
 #pragma omp parallel for schedule(static)
     for (size_t i = 0; i < N; ++i) {
-        // 4.1  query neighbours inside 30 km chord
+        // query neighbours inside 30 km chord
         const double q[3] = {cloud.pts[i].x, cloud.pts[i].y, cloud.pts[i].z};
         std::vector<std::pair<size_t, double>> hits;
         nanoflann::SearchParams p;
         p.sorted = false;  // unsorted = faster
         index.radiusSearch(q, chord2, hits, p);
 
-        // 4.2  keep closest in each quadrant
+        //  keep closest in each quadrant
         int bestIdx[4] = {-1, -1, -1, -1};  // SW,SE,NW,NE
         int bestDist[4] = {INT_MAX, INT_MAX, INT_MAX, INT_MAX};
 
@@ -457,8 +465,9 @@ std::vector<std::vector<labosm::Edge>> GraphCreator::createGraph(std::vector<std
             size_t j = h.first;
             if (j == i) continue;  // skip self
 
+            // false-positive filter
             int dist = greatCircleDistance(latRad, lonRad, pointsRad[j].second, pointsRad[j].first);
-            if (dist > MAX_EDGE) continue;  // false-positive filter
+            if (dist > MAX_EDGE) continue;
 
             // quadrant test  (add constants to avoid  –180 / +180 wrap)
             double lat2a = pointsDeg[j].second + 90.0;
@@ -484,8 +493,7 @@ std::vector<std::vector<labosm::Edge>> GraphCreator::createGraph(std::vector<std
                 graph[i].emplace_back(j, d);
             }
 
-        if ((i & 0x3FFF) == 0)  // every ~16 k pts
-            std::cout << "thread " << omp_get_thread_num() << " processed " << i << " vertices\n";
+        if (i % 10000 == 0) std::cout << "thread " << omp_get_thread_num() << " processed " << i << " vertices\n";
     }
 
     // backward edges

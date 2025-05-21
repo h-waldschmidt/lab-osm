@@ -9,7 +9,6 @@
 #include <iostream>
 #include <numeric>
 #include <queue>
-#include <random>
 #include <sstream>
 #include <tuple>
 #include <unordered_set>
@@ -72,9 +71,6 @@ void Graph::readGraph(const std::string& path) {
     int num_edges = std::stoi(line);
 
     m_node_level.clear();
-
-    // save node rank if CH Mode, else skip the node information
-    // or save coords if distances in meters are required
 
     m_node_coords.resize(num_nodes);
 
@@ -237,6 +233,7 @@ void Graph::contractionHierarchyQuery(QueryData& data) {
     std::pair<int, int> fwd_node;
     std::pair<int, int> bwd_node;
 
+    // bidirectional dijkstra
     while (!fwd_pq.empty() || !bwd_pq.empty()) {
         while (!fwd_pq.empty()) {
             fwd_node = fwd_pq.top();
@@ -386,6 +383,7 @@ void Graph::contractionHierarchyExtractPath(QueryData& data) {
 
 void Graph::unpackEdge(const std::tuple<int, int, bool>& edge_index, std::vector<int>& path) {
     const Edge* edge = nullptr;
+    // the bool indictes if we need to look at bwd or fwd edge/graph
     if (std::get<2>(edge_index)) {
         edge = &m_graph[std::get<0>(edge_index)][std::get<1>(edge_index)];
     } else {
@@ -787,6 +785,8 @@ std::pair<uint32_t, uint32_t> Graph::hubLabelQuery(QueryData& data) {
     return std::make_pair(best_fwd_index, best_bwd_index);
 }
 
+// NOTE: Is very similar to CH Path extraction
+// But need to look at the fwd and bwd labels
 void Graph::hubLabelExtractPath(QueryData& data, std::pair<int, int> hub_indices) {
     if (data.m_distance == std::numeric_limits<int>::max() || data.m_distance == -1 || data.m_meeting_node == -1) {
         std::cout << "Can't return path for invalid data!" << "\n";
@@ -905,24 +905,17 @@ int Graph::getNearestNode(double latitude, double longitude) {
     int nearest_node = -1;
     double min_distance = std::numeric_limits<double>::max();
 
+    // just brute force it
+    // TODO: Although could reuse the kd-tree from the graph_creator
     for (int i = 0; i < m_num_nodes; ++i) {
-        double distance = greatCircleDistance(latitude, longitude, m_node_coords[i].first, m_node_coords[i].second);
+        double distance =
+            Graph::greatCircleDistance(latitude, longitude, m_node_coords[i].first, m_node_coords[i].second);
         if (distance < min_distance) {
             min_distance = distance;
             nearest_node = i;
         }
     }
     return nearest_node;
-}
-
-std::vector<int> intersection(std::vector<int> v1, std::vector<int> v2) {
-    std::vector<int> v3;
-
-    std::sort(v1.begin(), v1.end());
-    std::sort(v2.begin(), v2.end());
-
-    std::set_intersection(v1.begin(), v1.end(), v2.begin(), v2.end(), back_inserter(v3));
-    return v3;
 }
 
 void Graph::createReverseGraphNormal() {
@@ -1668,5 +1661,4 @@ int Graph::simplifiedHubLabelQuery(int node, std::vector<std::tuple<int, int, in
 
     return distance;
 }
-
 }  // namespace labosm

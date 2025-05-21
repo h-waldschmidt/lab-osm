@@ -1,6 +1,5 @@
 
 
-#include <chrono>
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
@@ -8,7 +7,6 @@
 #include <string>
 
 #include "graph_creator.h"
-#include "helper.h"
 #include "server.h"
 
 int parseLine(std::string line) {
@@ -49,7 +47,8 @@ int main(int argc, char* argv[]) {
 
         // TODO: Take fmi file as input, generate contraction graph and write it to a fmi file
         // TODO: Support contraction graph as input for server
-        // TODO: Add memory usage values to server
+        // TODO: Add memory usage values and number of PQ pops to server
+        // TODO: Add a benchmark function that tests all the routing algorithms with 1000 random point to point queries
 
         std::cout << "Example: ./labosm simpleserver input.fmi" << "\n";
         std::cout << "Simple Server only supports dijkstra for routing\n" << "\n";
