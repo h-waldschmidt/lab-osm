@@ -30,9 +30,35 @@ Example workflow looks like this to generate graph with `6M` points and run simp
 - Generating FMI Graph with 16 Threads and `4157317` Points: `9037ms = 9s`
   - Results in `22612494` Edges
 
-## Images: TODO
+## Images
 
-TODO
+### 2000 Points filtered with Coastlines
+
+Unfiltered Points:
+
+|          Globe           |          Map           |
+| :----------------------: | :--------------------: |
+| ![](images/2K_Globe.png) | ![](images/2K_Map.png) |
+
+It can be seen that the distribution is uniform and doesn't cluster at the poles.
+
+Filtered Points:
+
+![](images/2K_Filtered.png)
+
+### 2000 Points filtered with Image
+
+Unfiltered Points:
+
+|             Globe              |             Map              |
+| :----------------------------: | :--------------------------: |
+| ![](images/2K_Image_Globe.png) | ![](images/2K_Image_Map.png) |
+
+It can be seen that the distribution is uniform and doesn't cluster at the poles.
+
+Filtered Points:
+
+![](images/2K_Image_Filtered.png)
 
 ## Code Structure
 
