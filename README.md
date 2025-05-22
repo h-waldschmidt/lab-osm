@@ -60,6 +60,18 @@ Filtered Points:
 
 ![](images/2K_Image_Filtered.png)
 
+### Dijkstra Route Examples
+
+Here just some pictures of the routes returned by Dijkstra to kinda showcase the created edges:
+
+![](images/Dijkstra_Route_1.png)
+
+![](images/Dijkstra_Route_2.png)
+
+![](images/Dijkstra_Route_3.png)
+
+![](images/Dijkstra_Route_4.png)
+
 ## Code Structure
 
 > [!NOTE]  

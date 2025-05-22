@@ -1,4 +1,4 @@
-const apiUrl = "http://localhost:8080/api/";
+const apiUrl = `${window.location.origin}/api/`; 
 
 let startId = -1;
 let endId = -1;
@@ -31,7 +31,10 @@ function mapInit() {
 
         // get nearest node from the graph
         fetch(
-            apiUrl + "nearest_node?lat=" + latlng1.lat + "&lon=" + latlng1.lng
+            apiUrl + "nearest_node?lat=" + latlng1.lat + "&lon=" + latlng1.lng, {
+                    credentials: "include",
+                    ...init,
+            }
         )
             .then((response) => {
                 if (response.ok) {
@@ -56,7 +59,10 @@ function mapInit() {
             });
 
         fetch(
-            apiUrl + "nearest_node?lat=" + latlng2.lat + "&lon=" + latlng2.lng
+            apiUrl + "nearest_node?lat=" + latlng2.lat + "&lon=" + latlng2.lng,{
+                    credentials: "include",
+                    ...init,
+            }
         )
             .then((response) => {
                 if (response.ok) {
@@ -90,7 +96,10 @@ function mapInit() {
 }
 
 function init() {
-    fetch(apiUrl).then((response) => {
+    fetch(apiUrl, {
+                    credentials: "include",
+                    ...init,
+            }).then((response) => {
         if (response.ok) {
             response.json().then((data) => {
                 const type = data.type;
