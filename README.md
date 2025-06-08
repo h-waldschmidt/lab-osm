@@ -15,20 +15,18 @@ Run `./build/labosm` to see most usage examples.
 
 For image based filtering download [this image from NASA](https://eoimages.gsfc.nasa.gov/images/imagerecords/73000/73963/gebco_08_rev_bath_21600x10800.png).
 
-Example workflow looks like this to generate graph with `6M` points and run simpleserver with just dijkstra algorithm:
-1. `./build/labosm generate_points planet-coastlinespbf-cleaned.osm.pbf output/6M 6000000`
-2. `./build/labosm points_to_fmi output/6M_filtered_points.geojson output/6M_graph.fmi`
-3. `./build/labosm simpleserver output/6M_graph.fmi`
+Example workflow looks like this to generate graph with `4M` points and run simpleserver with just dijkstra algorithm:
+1. `./build/labosm generate_points planet-coastlinespbf-cleaned.osm.pbf output/4M 4000000`
+2. `./build/labosm points_to_fmi output/4M_filtered_points.geojson output/6M_graph.fmi`
+3. `./build/labosm simpleserver output/4M_graph.fmi`
 
 ## Benchmarks
-- Point in Polygon test with 16 Threads 6M Points: `36616160ms = 10h 10m`
+- Point in Polygon test with 16 Threads 4M Points: `36616160ms = 10h 10m`
   - Results in `4248964` Points in water `grep -o "Point" < filtered_points_6M.geojson | wc -l`
-- On Land filtering based on image test 6M Points: `7993ms = 7,9s`
-    - Results in `4157317` Points in water `grep -o "Point" < filtered_points_image_6M.geojson | wc -l`
-- Generating FMI Graph with 16 Threads and `4248964` Points: `8911ms = 8,9s`
-  - Results in `23117984` Edges
-- Generating FMI Graph with 16 Threads and `4157317` Points: `9037ms = 9s`
-  - Results in `22612494` Edges
+- On Land filtering based on image test 4M Points: `3155ms = 3,1s`
+    - Results in `4000000` Points in water `grep -o "Point" < filtered_points_image_6M.geojson | wc -l`
+- Generating FMI Graph with 16 Threads and `4000000` Points: `9874 = 9,8s`
+  - Results in `21754558` Edges
 
 ## Images
 

@@ -38,8 +38,7 @@ int main(int argc, char* argv[]) {
         std::cout << "Example: ./labosm generate_points input.osm.pbf output_prefix num_points image_path\n";
         std::cout << "Generates num_points random points on the sphere, filters them based on the given coastlines and "
                      "writes them to a geojson file\n";
-        std::cout << "Creates the files output_prefix_coastlines.geojson, output_prefix_points.geojson and "
-                     "output_prefix_filtered_points.geojson\n";
+        std::cout << "Creates the files output_prefix_coastlines.geojson and output_prefix_filtered_points.geojson\n";
         std::cout << "If image_path is given, the points are filtered based on the image\n" << "\n";
 
         std::cout << "Example: ./labosm points_to_fmi filtered_points.geojson output.fmi\n" << "\n";

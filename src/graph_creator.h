@@ -90,6 +90,30 @@ class GraphCreator {
     WayList m_coastline_ways;
 
     /**
+     * @brief Checks if a point is in water using image-based filtering.
+     *
+     * @param lat_deg Latitude of the point.
+     * @param lon_deg Longitude of the point.
+     * @param img_data Pointer to the image data.
+     * @param img_width Width of the image.
+     * @param img_height Height of the image.
+     * @param img_channels Number of image channels.
+     * @return True if the point is in water, false otherwise.
+     */
+    bool isPointInWaterImageBased(double lat_deg, double lon_deg, const unsigned char* img_data, int img_width, int img_height, int img_channels) const;
+
+    /**
+     * @brief Checks if a point is in water using polygon-based filtering.
+     *
+     * @param lat_deg Latitude of the point.
+     * @param lon_deg Longitude of the point.
+     * @param poly_vec_ways Vector of polygon ways (coastlines).
+     * @param poly_boxes Vector of bounding boxes for the polygons.
+     * @return True if the point is in water, false otherwise.
+     */
+    bool isPointInWaterPolygonBased(double lat_deg, double lon_deg, const std::vector<std::vector<labosm::Vec3>>& poly_vec_ways, const std::vector<labosm::BoudingBox>& poly_boxes) const;
+
+    /**
      * @brief Convert latitude and longitude to pixel coordinates.
      * This uses the Equirectangular projection (Plate Carrée).
      *
@@ -99,17 +123,7 @@ class GraphCreator {
      * @param img_height Height of the image in pixels.
      * @return A pair of pixel coordinates (x, y).
      */
-    std::pair<int, int> latlon_to_pixel(double lat, double lon, int img_width, int img_height);
-
-    /**
-     * @brief Generate random points on a sphere that are uniformly distributed (no higher density at the poles).
-     * This is done using the method described in:
-     * https://mathworld.wolfram.com/SpherePointPicking.html
-     *
-     * @param num_points The number of points to generate.
-     * @return A vector of pairs of latitude and longitude.
-     */
-    std::vector<std::pair<double, double>> generatePointsOnSphere(int num_points);
+    std::pair<int, int> latlon_to_pixel(double lat, double lon, int img_width, int img_height) const;
 
     /**
      * @brief Read points from a GeoJSON file.
@@ -134,29 +148,6 @@ class GraphCreator {
      * If so, the two ways are merged.
      */
     void merge_ways();
-
-    /**
-     * @brief Filter out poitns that are outside of the water.
-     * Uses the coastlines to filter the points.
-     * Based on the following implementation:
-     * https://github.com/lcx366/SphericalPolygon/blob/master/sphericalpolygon/inside_polygon.py
-     * @param points The points to filter.
-     * @return A vector of points that are inside the water.
-     */
-    std::vector<std::pair<double, double>> filterOutsideWater(const std::vector<std::pair<double, double>>& points);
-
-    /**
-     * @brief Filter out points that are outside of the water based on an image.
-     * Works like a lookup table.
-     * Uses the follwing image from NASA:
-     * https://eoimages.gsfc.nasa.gov/images/imagerecords/73000/73963/gebco_08_rev_bath_21600x10800.png
-     *
-     * @param points The points to filter.
-     * @param image_path The path to the image file.
-     * @return A vector of points that are inside the water.
-     */
-    std::vector<std::pair<double, double>> filterOutsideWaterImageBased(
-        const std::vector<std::pair<double, double>>& points, const std::string& image_path);
 
     /**
      * @brief Create a graph from the points.
