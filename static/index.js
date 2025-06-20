@@ -103,6 +103,7 @@ function init() {
         if (response.ok) {
             response.json().then((data) => {
                 const type = data.type;
+                const hubLabelsAvailable = data.hub_labels !== undefined ? (data.hub_labels === true || data.hub_labels === "true") : true;
                 if (type == "simple") {
                     // only show the dijkstra and clear button
                     document.getElementById("complex-ch").style.display =
@@ -113,6 +114,19 @@ function init() {
                     // dont show the dijkstra button
                     document.getElementById("simple-dijkstra").style.display =
                         "none";
+                    // If hub labels are not available, disable the button and show a tooltip
+                    const hubLabelBtn = document.getElementById("complex-hub-label");
+                    if (!hubLabelsAvailable) {
+                        hubLabelBtn.disabled = true;
+                        hubLabelBtn.textContent = "Hub Labels (Not Available)";
+                        hubLabelBtn.title = "Hub labeling is disabled on this server.";
+                        hubLabelBtn.classList.add("opacity-50", "cursor-not-allowed");
+                    } else {
+                        hubLabelBtn.disabled = false;
+                        hubLabelBtn.textContent = "Route with Hub Labels";
+                        hubLabelBtn.title = "";
+                        hubLabelBtn.classList.remove("opacity-50", "cursor-not-allowed");
+                    }
                 }
             });
         } else {
@@ -128,6 +142,7 @@ function dijkstraQuery() {
     }
 
     disableButtons();
+    const clientStartTime = performance.now();
 
     fetch(apiUrl + "dijkstra?start=" + startId + "&end=" + endId).then(
         (response) => {
@@ -136,7 +151,20 @@ function dijkstraQuery() {
                     console.log(data);
                     const path = data.path;
                     const distance = data.distance;
+                    const pqPops = data.pq_pops;
+                    const memoryUsage = data.memory_usage;
+                    const queryTime = data.query_time;
+                    const extractionTime = data.extraction_time;
+                    const clientEndTime = performance.now();
+                    const clientRuntime = (clientEndTime - clientStartTime).toFixed(2);
+
                     console.log("Distance: " + distance);
+                    document.getElementById("distance").textContent = distance + " m";
+                    document.getElementById("pq-pops").textContent = pqPops;
+                    document.getElementById("memory-usage").textContent = memoryUsage + " KB";
+                    document.getElementById("query-time").textContent = queryTime + " µs";
+                    document.getElementById("path-extraction-time").textContent = extractionTime + " µs";
+                    document.getElementById("runtime").textContent = clientRuntime + " ms";
 
                     clearPath();
                     polylineLayer = L.polyline(path.coordinates).addTo(map);
@@ -163,6 +191,7 @@ function chQuery() {
     }
 
     disableButtons();
+    const clientStartTime = performance.now();
 
     fetch(apiUrl + "ch?start=" + startId + "&end=" + endId).then((response) => {
         if (response.ok) {
@@ -170,7 +199,20 @@ function chQuery() {
                 console.log(data);
                 const path = data.path;
                 const distance = data.distance;
+                const pqPops = data.pq_pops;
+                const memoryUsage = data.memory_usage;
+                const queryTime = data.query_time;
+                const extractionTime = data.extraction_time;
+                const clientEndTime = performance.now();
+                const clientRuntime = (clientEndTime - clientStartTime).toFixed(2);
+
                 console.log("Distance: " + distance);
+                document.getElementById("distance").textContent = distance + " m";
+                document.getElementById("pq-pops").textContent = pqPops;
+                document.getElementById("memory-usage").textContent = memoryUsage + " KB";
+                document.getElementById("query-time").textContent = queryTime + " µs";
+                document.getElementById("path-extraction-time").textContent = extractionTime + " µs";
+                document.getElementById("runtime").textContent = clientRuntime + " ms";
 
                 clearPath();
                 polylineLayer = L.polyline(path.coordinates).addTo(map);
@@ -192,6 +234,7 @@ function hubLabelQuery() {
     }
 
     disableButtons();
+    const clientStartTime = performance.now();
 
     fetch(apiUrl + "hub-label?start=" + startId + "&end=" + endId).then(
         (response) => {
@@ -200,7 +243,20 @@ function hubLabelQuery() {
                     console.log(data);
                     const path = data.path;
                     const distance = data.distance;
+                    const pqPops = data.pq_pops;
+                    const memoryUsage = data.memory_usage;
+                    const queryTime = data.query_time;
+                    const extractionTime = data.extraction_time;
+                    const clientEndTime = performance.now();
+                    const clientRuntime = (clientEndTime - clientStartTime).toFixed(2);
+
                     console.log("Distance: " + distance);
+                    document.getElementById("distance").textContent = distance + " m";
+                    document.getElementById("pq-pops").textContent = pqPops;
+                    document.getElementById("memory-usage").textContent = memoryUsage + " KB";
+                    document.getElementById("query-time").textContent = queryTime + " µs";
+                    document.getElementById("path-extraction-time").textContent = extractionTime + " µs";
+                    document.getElementById("runtime").textContent = clientRuntime + " ms";
 
                     clearPath();
                     polylineLayer = L.polyline(path.coordinates).addTo(map);

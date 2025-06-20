@@ -2,13 +2,13 @@
 
 #include <omp.h>
 
-#include <algorithm> // For std::min, std::max
+#include <algorithm>  // For std::min, std::max
 #include <atomic>
 #include <chrono>
-#include <cmath> // For M_PI, acos, sin, cos, atan2, fabs
+#include <cmath>  // For M_PI, acos, sin, cos, atan2, fabs
 #include <fstream>
 #include <iostream>
-#include <limits> // For std::numeric_limits
+#include <limits>  // For std::numeric_limits
 #include <random>
 #include <vector>
 
@@ -38,13 +38,15 @@ void GraphCreator::generatePointsAndFilter(const std::string& coastlines, int nu
         auto end_reading = std::chrono::steady_clock::now();
 
         std::cout << "Reading time: "
-                  << std::chrono::duration_cast<std::chrono::milliseconds>(end_reading - start_reading).count() << " ms\n";
+                  << std::chrono::duration_cast<std::chrono::milliseconds>(end_reading - start_reading).count()
+                  << " ms\n";
 
         auto start_merging = std::chrono::steady_clock::now();
         merge_ways();
         auto end_merging = std::chrono::steady_clock::now();
         std::cout << "Merging time: "
-                  << std::chrono::duration_cast<std::chrono::milliseconds>(end_merging - start_merging).count() << " ms\n";
+                  << std::chrono::duration_cast<std::chrono::milliseconds>(end_merging - start_merging).count()
+                  << " ms\n";
 
         writeCoastlinesToGeojson(output_file_prefix + "_coastlines.geojson", m_coastline_nodes, m_coastline_ways);
     }
@@ -55,7 +57,7 @@ void GraphCreator::generatePointsAndFilter(const std::string& coastlines, int nu
     } else {
         filtered_points.reserve(num_points);
     }
-    
+
     std::atomic<int> collected_points_count = 0;
 
     auto start_gen_and_filter = std::chrono::steady_clock::now();
@@ -114,7 +116,7 @@ void GraphCreator::generatePointsAndFilter(const std::string& coastlines, int nu
         }
     }
 
-    #pragma omp parallel
+#pragma omp parallel
     {
         std::mt19937 gen(std::random_device{}() + omp_get_thread_num());
         std::uniform_real_distribution<> dis(0.0, 1.0);
@@ -133,12 +135,12 @@ void GraphCreator::generatePointsAndFilter(const std::string& coastlines, int nu
 
             if (image_based_filtering) {
                 is_in_water = isPointInWaterImageBased(lat_deg, lon_deg, img_data, img_width, img_height, img_channels);
-            } else { // Polygon-based filtering
+            } else {  // Polygon-based filtering
                 is_in_water = isPointInWaterPolygonBased(lat_deg, lon_deg, poly_vec_ways, poly_boxes);
             }
 
             if (is_in_water) {
-                #pragma omp critical
+#pragma omp critical
                 {
                     if (filtered_points.size() < static_cast<size_t>(num_points)) {
                         filtered_points.push_back(current_point);
@@ -152,18 +154,18 @@ void GraphCreator::generatePointsAndFilter(const std::string& coastlines, int nu
         }
     }
 
-
     if (image_based_filtering && img_data) {
         stbi_image_free(img_data);
     }
 
     auto end_gen_and_filter = std::chrono::steady_clock::now();
-    std::cout << "Generation and Filtering time: "
-              << std::chrono::duration_cast<std::chrono::milliseconds>(end_gen_and_filter - start_gen_and_filter).count()
-              << " ms\n";
+    std::cout
+        << "Generation and Filtering time: "
+        << std::chrono::duration_cast<std::chrono::milliseconds>(end_gen_and_filter - start_gen_and_filter).count()
+        << " ms\n";
     std::cout << "Target points: " << num_points << "\n";
     std::cout << "Collected points: " << filtered_points.size() << "\n";
-    
+
     std::ofstream out(output_file_prefix + "_filtered_points.geojson");
     out << R"({"type": "FeatureCollection", "features": [)";
     for (size_t i = 0; i < filtered_points.size(); ++i) {
@@ -177,30 +179,37 @@ void GraphCreator::generatePointsAndFilter(const std::string& coastlines, int nu
     std::cout << "Filtered points written to " << output_file_prefix + "_filtered_points.geojson" << '\n';
 }
 
-bool GraphCreator::isPointInWaterImageBased(double lat_deg, double lon_deg, const unsigned char* img_data, int img_width, int img_height, int img_channels) const {
+bool GraphCreator::isPointInWaterImageBased(double lat_deg, double lon_deg, const unsigned char* img_data,
+                                            int img_width, int img_height, int img_channels) const {
     auto [px, py] = latlon_to_pixel(lat_deg, lon_deg, img_width, img_height);
     // Assuming white (255,255,255) is land
     if (img_channels >= 3 &&
-        !(img_data[static_cast<size_t>(py) * img_width * img_channels + static_cast<size_t>(px) * img_channels] == 255 &&
-          img_data[static_cast<size_t>(py) * img_width * img_channels + static_cast<size_t>(px) * img_channels + 1] == 255 &&
-          img_data[static_cast<size_t>(py) * img_width * img_channels + static_cast<size_t>(px) * img_channels + 2] == 255)) {
+        !(img_data[static_cast<size_t>(py) * img_width * img_channels + static_cast<size_t>(px) * img_channels] ==
+              255 &&
+          img_data[static_cast<size_t>(py) * img_width * img_channels + static_cast<size_t>(px) * img_channels + 1] ==
+              255 &&
+          img_data[static_cast<size_t>(py) * img_width * img_channels + static_cast<size_t>(px) * img_channels + 2] ==
+              255)) {
         return true;
     } else if (img_channels == 1 && /* simple grayscale check, adapt if needed */
-               !(img_data[static_cast<size_t>(py) * img_width + static_cast<size_t>(px)] == 255) ) {
+               !(img_data[static_cast<size_t>(py) * img_width + static_cast<size_t>(px)] == 255)) {
         return true;
     }
     // Add more conditions if other channel counts or color interpretations are needed
     return false;
 }
 
-bool GraphCreator::isPointInWaterPolygonBased(double lat_deg, double lon_deg, const std::vector<std::vector<labosm::Vec3>>& poly_vec_ways, const std::vector<labosm::BoudingBox>& poly_boxes) const {
-    if (lat_deg <= -85.0) { // South pole land (Antarctica)
-        return false; // Not in water
+bool GraphCreator::isPointInWaterPolygonBased(double lat_deg, double lon_deg,
+                                              const std::vector<std::vector<labosm::Vec3>>& poly_vec_ways,
+                                              const std::vector<labosm::BoudingBox>& poly_boxes) const {
+    if (lat_deg <= -85.0) {  // South pole land (Antarctica)
+        return false;        // Not in water
     }
 
     const double deg2rad_const = M_PI / 180.0;
     const double two_pi_const = 2.0 * M_PI;
-    // labosm::Vec3 point_vec3 = labosm::Vec3(lat_deg, lon_deg).normalize(); // Not directly needed here, rotation handles it
+    // labosm::Vec3 point_vec3 = labosm::Vec3(lat_deg, lon_deg).normalize(); // Not directly needed here, rotation
+    // handles it
     bool inside_polygon = false;
 
     double r_theta_z = -lon_deg * deg2rad_const;
@@ -209,14 +218,12 @@ bool GraphCreator::isPointInWaterPolygonBased(double lat_deg, double lon_deg, co
     double sz = std::sin(r_theta_z);
     double cy = std::cos(r_theta_y);
     double sy = std::sin(r_theta_y);
-    double R[3][3] = {
-        {cy * cz, -cy * sz, sy},
-        {sz, cz, 0.0},
-        {-sy * cz, sy * sz, cy}};
+    double R[3][3] = {{cy * cz, -cy * sz, sy}, {sz, cz, 0.0}, {-sy * cz, sy * sz, cy}};
 
     for (size_t j = 0; j < poly_vec_ways.size(); ++j) {
-        // if (collected_points_count.load(std::memory_order_relaxed) >= num_points) break; // This check belongs in the calling loop
-        
+        // if (collected_points_count.load(std::memory_order_relaxed) >= num_points) break; // This check belongs in the
+        // calling loop
+
         const auto& current_poly_vec_way = poly_vec_ways[j];
         if (current_poly_vec_way.empty()) continue;
 
@@ -237,7 +244,7 @@ bool GraphCreator::isPointInWaterPolygonBased(double lat_deg, double lon_deg, co
             const auto& current_node_vec = current_poly_vec_way[k];
             x_rotated = R[0][0] * current_node_vec.x + R[0][1] * current_node_vec.y + R[0][2] * current_node_vec.z;
             y_rotated = R[1][0] * current_node_vec.x + R[1][1] * current_node_vec.y + R[1][2] * current_node_vec.z;
-            
+
             double cur_lon_transformed = atan2(y_rotated, x_rotated);
             double angle = cur_lon_transformed - previous_lon_transformed;
             angle += (angle < -M_PI) * two_pi_const;
@@ -250,7 +257,7 @@ bool GraphCreator::isPointInWaterPolygonBased(double lat_deg, double lon_deg, co
             break;
         }
     }
-    return !inside_polygon; // If not inside any polygon, it's in water
+    return !inside_polygon;  // If not inside any polygon, it's in water
 }
 
 void GraphCreator::generateGraph(const std::string& points_file, const std::string& output_file_path) {
@@ -261,7 +268,78 @@ void GraphCreator::generateGraph(const std::string& points_file, const std::stri
     auto end = std::chrono::steady_clock::now();
     std::cout << "Graph creation took: " << std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count()
               << " ms\n";
+    // At the end, randomize node order using DFS
+    randomizeNodeOrderDFS(points, graph);
     writeGraphToFMI(points, graph, output_file_path);
+}
+
+void GraphCreator::randomizeNodeOrderDFS(std::vector<std::pair<double, double>>& points,
+                                         std::vector<std::vector<labosm::Edge>>& graph) {
+    size_t num_nodes = points.size();
+    if (num_nodes == 0) return;
+    std::vector<bool> visited(num_nodes, false);
+    std::vector<int> order;
+    order.reserve(num_nodes);
+    std::mt19937 rng(std::random_device{}());
+    std::uniform_int_distribution<size_t> dist(0, num_nodes - 1);
+    size_t start_node = dist(rng);
+
+    // Iterative DFS using explicit stack
+    std::vector<size_t> stack;
+    stack.push_back(start_node);
+    while (!stack.empty()) {
+        size_t node = stack.back();
+        stack.pop_back();
+        if (visited[node]) continue;
+        visited[node] = true;
+        order.push_back(static_cast<int>(node));
+        // Push neighbors in reverse order for similar order as recursive
+        const auto& edges = graph[node];
+        for (auto it = edges.rbegin(); it != edges.rend(); ++it) {
+            if (!visited[it->m_target]) {
+                stack.push_back(it->m_target);
+            }
+        }
+    }
+    // If graph is disconnected, visit all components
+    for (size_t i = 0; i < num_nodes; ++i) {
+        if (!visited[i]) {
+            stack.push_back(i);
+            while (!stack.empty()) {
+                size_t node = stack.back();
+                stack.pop_back();
+                if (visited[node]) continue;
+                visited[node] = true;
+                order.push_back(static_cast<int>(node));
+                const auto& edges = graph[node];
+                for (auto it = edges.rbegin(); it != edges.rend(); ++it) {
+                    if (!visited[it->m_target]) {
+                        stack.push_back(it->m_target);
+                    }
+                }
+            }
+        }
+    }
+
+    // Build old->new index map
+    std::vector<int> old_to_new(num_nodes);
+    for (size_t i = 0; i < num_nodes; ++i) old_to_new[order[i]] = static_cast<int>(i);
+
+    // Reorder points
+    std::vector<std::pair<double, double>> new_points(num_nodes);
+    for (size_t i = 0; i < num_nodes; ++i) new_points[i] = points[order[i]];
+    points = std::move(new_points);
+
+    // Reorder graph and remap edges
+    std::vector<std::vector<labosm::Edge>> new_graph(num_nodes);
+    for (size_t i = 0; i < num_nodes; ++i) {
+        for (const auto& edge : graph[order[i]]) {
+            labosm::Edge new_edge = edge;
+            new_edge.m_target = old_to_new[edge.m_target];
+            new_graph[i].push_back(new_edge);
+        }
+    }
+    graph = std::move(new_graph);
 }
 
 void GraphCreator::writeCoastlinesToGeojson(const std::string& output_file, const NodeMap& nodes, const WayList& ways) {

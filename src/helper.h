@@ -1,7 +1,10 @@
 #pragma once
 
 #include <cmath>
+#include <fstream>
+#include <iostream>
 #include <limits>
+#include <regex>
 #include <tuple>
 #include <vector>
 
@@ -83,6 +86,14 @@ inline int greatCircleDistance(double lat1, double lon1, double lat2, double lon
     double c = 2.0 * std::atan2(std::sqrt(a), std::sqrt(1.0 - a));
     return static_cast<int>(R_EARTH * c);
 }
+
+// SimpleEdge struct used for the simple graph data structure for dijkstra, since we dont have underlying edges
+struct SimpleEdge {
+    int m_target;  // corresponds to index of node in graph data structure
+    int m_cost;
+
+    SimpleEdge(int target, int cost) : m_target(target), m_cost(cost) {}
+};
 
 struct Edge {
     int m_target;  // corresponds to index of node in graph data structure
@@ -233,4 +244,24 @@ struct QueryData {
  */
 enum Heuristic { IN_OUT = 0, EDGE_DIFFERENCE = 1, WEIGHTED_COST = 2, MIXED = 3 };
 
+// Function to parse a line and extract a number
+inline int parseLine(std::string line) {
+    return stoi(std::regex_replace(line, std::regex("[^0-9]*([0-9]+).*"), std::string("$1")));
+}
+
+// Function to get current memory usage in KB
+// https://stackoverflow.com/questions/63166/how-to-determine-cpu-and-memory-consumption-from-inside-a-process
+inline int getMemoryUsage() {
+    int result = -1;
+    std::ifstream file("/proc/self/status");
+    std::string line;
+    while (getline(file, line)) {
+        if (line.find("VmSize") != std::string::npos) {
+            result = parseLine(line);
+            break;
+        }
+    }
+    file.close();
+    return result;
+}
 }  // namespace labosm

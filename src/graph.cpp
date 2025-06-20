@@ -14,20 +14,54 @@
 #include <unordered_set>
 #include <utility>
 
-#include "helper.h"
+#include "../third-party/radix_heap.h"
 
 #define _USE_MATH_DEFINES
 #include <math.h>
 
 namespace labosm {
 
+std::string heuristicToString(Heuristic heuristic) {
+    switch (heuristic) {
+        case IN_OUT:
+            return "IN_OUT";
+        case EDGE_DIFFERENCE:
+            return "EDGE_DIFFERENCE";
+        case WEIGHTED_COST:
+            return "WEIGHTED_COST";
+        case MIXED:
+            return "MIXED";
+        default:
+            return "UNKNOWN";
+    }
+}
+
 Graph::Graph(const std::string& path, bool ch_available, Heuristic ch_heuristic)
     : m_ch_available(ch_available), m_is(false), m_num_threads(1) {
-    readGraph(path);
-    m_num_nodes = m_graph.size();
+    bool is_chfmi = path.size() >= 6 && path.substr(path.size() - 6) == ".chfmi";
+    if (is_chfmi && m_ch_available) {
+        readGraphFromCHFMI(path);
+    } else {
+        if (m_ch_available)
+            readGraph(path);
+        else
+            readSimpleGraph(path);
 
-    if (m_ch_available) {
-        createCHwithoutIS(ch_heuristic);
+        m_num_nodes = m_graph.size();
+        if (m_ch_available) {
+            createCHwithoutIS(ch_heuristic);
+            std::string output_filename_base = path;
+            size_t pos_fmi = output_filename_base.rfind(".fmi");
+            if (pos_fmi != std::string::npos) {
+                output_filename_base.replace(pos_fmi, 4, "");
+            }
+            size_t pos_chfmi = output_filename_base.rfind(".chfmi");
+            if (pos_chfmi != std::string::npos) {
+                output_filename_base.replace(pos_chfmi, 6, "");  // Remove .chfmi
+            }
+            std::string output_filename = output_filename_base + "_" + heuristicToString(ch_heuristic) + ".chfmi";
+            writeGraphToCHFMI(output_filename);
+        }
     }
 
     createReverseGraph();
@@ -35,13 +69,33 @@ Graph::Graph(const std::string& path, bool ch_available, Heuristic ch_heuristic)
 
 Graph::Graph(const std::string& path, bool ch_available, int num_threads, Heuristic ch_heuristic)
     : m_ch_available(ch_available), m_num_threads(num_threads), m_is(true) {
-    readGraph(path);
-    m_num_nodes = m_graph.size();
-
     omp_set_num_threads(m_num_threads);
 
-    if (m_ch_available) {
-        createCHwithIS(ch_heuristic);
+    bool is_chfmi = path.size() >= 6 && path.substr(path.size() - 6) == ".chfmi";
+    if (is_chfmi && m_ch_available) {
+        readGraphFromCHFMI(path);
+        m_num_nodes = m_graph_contr.size();
+    } else {
+        if (m_ch_available)
+            readGraph(path);
+        else
+            readSimpleGraph(path);
+        m_num_nodes = m_graph.size();
+
+        if (m_ch_available) {
+            createCHwithIS(ch_heuristic);
+            std::string output_filename_base = path;
+            size_t pos_fmi = output_filename_base.rfind(".fmi");
+            if (pos_fmi != std::string::npos) {
+                output_filename_base.replace(pos_fmi, 4, "");
+            }
+            size_t pos_chfmi = output_filename_base.rfind(".chfmi");
+            if (pos_chfmi != std::string::npos) {
+                output_filename_base.replace(pos_chfmi, 6, "");
+            }
+            std::string output_filename = output_filename_base + "_" + heuristicToString(ch_heuristic) + ".chfmi";
+            writeGraphToCHFMI(output_filename);
+        }
     }
 
     createReverseGraph();
@@ -115,12 +169,84 @@ void Graph::readGraph(const std::string& path) {
     std::cout << "Finished reading graph file. Took " << elapsed.count() << " milliseconds " << "\n";
 }
 
+void Graph::readSimpleGraph(const std::string& path) {
+    std::cout << "Started reading graph file for dijkstra queries." << "\n";
+    auto begin = std::chrono::high_resolution_clock::now();
+    std::ifstream infile;
+    try {
+        infile.open(path);
+        if (!infile.good()) throw std::runtime_error("File doesn't exist!");
+    } catch (const std::exception& e) {
+        std::cerr << e.what() << '\n';
+        exit(1);
+    }
+
+    std::string line = "#";
+
+    // skip the metadata which begins with #
+    while (line[0] == '#') getline(infile, line);
+
+    getline(infile, line);
+    int num_nodes = std::stoi(line);
+    getline(infile, line);
+    int num_edges = std::stoi(line);
+
+    m_node_level.clear();
+
+    m_node_coords.resize(num_nodes);
+    for (int i = 0; i < num_nodes; ++i) {
+        getline(infile, line);
+        std::stringstream ss(line);
+        std::string s;
+
+        // skip unused fields
+        getline(ss, s, ' ');
+        getline(ss, s, ' ');
+
+        std::pair<double, double> coords;
+        getline(ss, s, ' ');
+        coords.first = stod(s);
+        getline(ss, s, ' ');
+        coords.second = stod(s);
+        m_node_coords[i] = coords;
+    }
+
+    m_graph.clear();
+    m_graph.resize(num_nodes);
+    m_dijkstra_edge_indices.clear();
+    m_dijkstra_edge_indices.resize(num_nodes + 1);
+    m_dijkstra_edge_indices[0] = 0;
+    m_dijkstra_edges.clear();
+    m_dijkstra_edges.reserve(num_edges);
+
+    // read edge information
+    for (int i = 0; i < num_edges; ++i) {
+        getline(infile, line);
+        std::stringstream ss(line);
+
+        std::string s;
+        getline(ss, s, ' ');
+        int src = std::stoi(s);
+        getline(ss, s, ' ');
+        int target = std::stoi(s);
+        getline(ss, s, ' ');
+        int cost = std::stoi(s);
+
+        m_dijkstra_edge_indices[src + 1] = i + 1;
+        m_dijkstra_edges.push_back(SimpleEdge{target, cost});
+    }
+
+    auto end = std::chrono::high_resolution_clock::now();
+    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - begin);
+    std::cout << "Finished reading graph file. Took " << elapsed.count() << " milliseconds " << "\n";
+}
+
 void Graph::createReverseGraph() {
     std::cout << "Started creating reverse graph." << "\n";
 
     auto begin = std::chrono::high_resolution_clock::now();
 
-    if (m_graph.empty()) {
+    if (m_graph.empty() && m_graph_contr.empty()) {
         std::cout << "Can't create reverse graph, because graph is empty" << "\n";
         return;
     }
@@ -143,43 +269,36 @@ void Graph::dijkstraQuery(DijkstraQueryData& data) {
         data.reset();
     }
 
-    struct PQEntry {
-        int m_target;
-        int m_distance;
-        int m_previous;
+    radix_heap::pair_radix_heap<int, int> pq;
 
-        bool operator>(const PQEntry& other) const { return m_distance > other.m_distance; }
-    };
+    pq.emplace(0, data.m_start);
+    data.m_prev[data.m_start] = data.m_start;
 
-    std::priority_queue<PQEntry, std::vector<PQEntry>, std::greater<PQEntry>> pq;
-
-    pq.push({data.m_start, 0, data.m_start});
-
-    PQEntry element;
     while (!pq.empty()) {
-        element = pq.top();
+        int dist = pq.top_key();
+        int node = pq.top_value();
         pq.pop();
         data.num_pq_pops++;
 
-        if (data.m_distances[element.m_target] <= element.m_distance) continue;
+        if (data.m_distances[node] <= dist) continue;
 
-        data.m_distances[element.m_target] = element.m_distance;
-        data.m_prev[element.m_target] = element.m_previous;
-        data.m_reset_nodes.push_back(element.m_target);
+        data.m_distances[node] = dist;
+        data.m_reset_nodes.push_back(node);
 
-        if (element.m_target == data.m_end) {
-            data.m_distance = element.m_distance;
+        if (node == data.m_end) {
+            data.m_distance = dist;
             return;
         }
 
-        for (const Edge& edge : m_graph[element.m_target]) {
-            int new_distance = element.m_distance + edge.m_cost;
+        for (int i = m_dijkstra_edge_indices[node]; i < m_dijkstra_edge_indices[node + 1]; ++i) {
+            const SimpleEdge& edge = m_dijkstra_edges[i];
+            int new_distance = dist + edge.m_cost;
             if (new_distance < data.m_distances[edge.m_target]) {
-                pq.push(PQEntry{edge.m_target, new_distance, element.m_target});
+                pq.emplace(new_distance, edge.m_target);
+                data.m_prev[edge.m_target] = node;
             }
         }
     }
-    data.m_distance = data.m_distances[data.m_end];
 }
 
 void Graph::dijkstraExtractPath(DijkstraQueryData& data) {
@@ -246,6 +365,7 @@ void Graph::contractionHierarchyQuery(QueryData& data) {
             // forward step
             for (int i = 0; i < m_graph[fwd_node.second].size(); ++i) {
                 Edge& e = m_graph[fwd_node.second][i];
+
                 if (!data.m_visited_fwd[e.m_target] || data.m_distances_fwd[e.m_target] > fwd_node.first + e.m_cost) {
                     if (!data.m_visited_fwd[e.m_target]) data.m_reset_nodes_fwd.push_back(e.m_target);
 
@@ -273,7 +393,7 @@ void Graph::contractionHierarchyQuery(QueryData& data) {
             bwd_pq.pop();
             data.num_pq_pops++;
 
-            if (data.m_visited_bwd[bwd_node.second] && bwd_node.first > data.m_distances_fwd[bwd_node.second]) continue;
+            if (data.m_visited_bwd[bwd_node.second] && bwd_node.first > data.m_distances_bwd[bwd_node.second]) continue;
             if (bwd_node.first > data.m_distance) break;
 
             // backward step
@@ -297,11 +417,6 @@ void Graph::contractionHierarchyQuery(QueryData& data) {
                     data.m_meeting_node = e.m_target;
                 }
             }
-            break;
-        }
-
-        // termination condition
-        if (fwd_node.first >= data.m_distance || bwd_node.first >= data.m_distance) {
             break;
         }
     }
@@ -608,6 +723,9 @@ void Graph::createHubLabelsWithIS() {
 
     uint32_t num_calculated = 0;
 
+    // at the beginning set threads to 1
+    omp_set_num_threads(1);
+
     for (int i = 0; i < different_levels_vec.size(); ++i) {
         if (i == 0) {
             int node = level_buckets[i][0];
@@ -671,6 +789,7 @@ void Graph::createHubLabelsWithIS() {
             // bwd labels
             for (int k = 0; k < m_reverse_graph[node].size(); ++k) {
                 Edge& e = m_reverse_graph[node][k];
+
                 // TODO: this cant happen because of pruned graph
                 if (m_node_level[node] >= m_node_level[e.m_target]) continue;
 
@@ -725,7 +844,9 @@ void Graph::createHubLabelsWithIS() {
             }
         }
         num_calculated += static_cast<uint32_t>(level_buckets[i].size());
-        // std::cout << "Finished Hub Labels for " << num_calculated << " num of nodes." << "\n";
+        std::cout << "Finished Hub Labels for " << num_calculated << " num of nodes." << "\n";
+
+        if (num_calculated > 0.8 * m_num_nodes) omp_set_num_threads(16);
     }
 
     auto end = std::chrono::high_resolution_clock::now();
@@ -1661,4 +1782,114 @@ int Graph::simplifiedHubLabelQuery(int node, std::vector<std::tuple<int, int, in
 
     return distance;
 }
+
+void Graph::readGraphFromCHFMI(const std::string& path) {
+    std::cout << "Started reading graph file from CHFMI." << "\n";
+
+    auto begin = std::chrono::high_resolution_clock::now();
+    std::ifstream infile;
+    try {
+        infile.open(path);
+        if (!infile.good()) throw std::runtime_error("File doesn\\'t exist!");
+    } catch (const std::exception& e) {
+        std::cerr << e.what() << '\n';
+        exit(1);
+    }
+
+    std::string line = "#";
+
+    // skip the metadata which begins with #
+    while (line[0] == '#') getline(infile, line);
+
+    getline(infile, line);
+    m_num_nodes = std::stoi(line);
+    getline(infile, line);
+    int num_edges = std::stoi(line);
+
+    m_node_level.resize(m_num_nodes);
+    m_node_coords.resize(m_num_nodes);
+    m_graph_contr.resize(m_num_nodes);
+
+    for (int i = 0; i < m_num_nodes; ++i) {
+        getline(infile, line);
+        std::stringstream ss(line);
+        std::string s;
+        int node_id;
+        int ch_id;
+        double lat, lon;
+
+        getline(ss, s, ' ');
+        node_id = std::stoi(s);
+        getline(ss, s, ' ');
+        ch_id = std::stoi(s);
+        getline(ss, s, ' ');
+        lon = stod(s);
+        getline(ss, s, ' ');
+        lat = stod(s);
+
+        m_node_coords[node_id] = {lon, lat};
+        m_node_level[node_id] = ch_id;
+    }
+
+    int edge_count = 0;
+
+    for (int i = 0; i < num_edges; ++i) {
+        getline(infile, line);
+        std::stringstream ss(line);
+        std::string s;
+        int src_id, tgt_id, cost, contraction_node_id;
+
+        try {
+            getline(ss, s, ' ');
+            src_id = std::stoi(s);
+            getline(ss, s, ' ');
+            tgt_id = std::stoi(s);
+            getline(ss, s, ' ');
+            cost = std::stoi(s);
+            getline(ss, s, ' ');
+            contraction_node_id = std::stoi(s);
+            m_graph_contr[src_id].push_back(ContractionEdge(tgt_id, cost, contraction_node_id, -1));
+            edge_count++;
+        } catch (const std::exception& e) {
+            std::cerr << "Error parsing edge line: " << line << "\n";
+            std::cerr << "Exception: " << e.what() << "\n";
+            continue;
+        }
+    }
+
+    std::cout << "Edge Count: " << edge_count << "\n";
+
+    auto end = std::chrono::high_resolution_clock::now();
+    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - begin);
+    std::cout << "Finished reading graph file from CHFMI. Took " << elapsed.count() << " milliseconds " << "\n";
+}
+
+void Graph::writeGraphToCHFMI(const std::string& filename) {
+    std::ofstream out(filename);
+    out << "# Timestamp: " << std::time(nullptr) << '\n';
+    out << "# Type: Coastlines with CH Information\n\n";
+
+    int num_edges = 0;
+    for (const auto& edges : m_graph_contr) {
+        num_edges += edges.size();
+    }
+
+    out << m_num_nodes << '\n';
+    out << num_edges << '\n';
+
+    for (int i = 0; i < m_num_nodes; ++i) {
+        const auto& [lon, lat] = m_node_coords[i];
+        // Assuming m_node_level contains the CH ID (rank)
+        out << i << " " << m_node_level[i] << " " << lon << " " << lat << " 0" << '\n';
+    }
+
+    for (int i = 0; i < m_num_nodes; ++i) {
+        const auto& edges = m_graph_contr[i];
+        for (const auto& edge : edges) {
+            out << i << " " << edge.m_target << " " << edge.m_cost << " " << edge.m_contraction_node << " 0" << '\n';
+        }
+    }
+    out.close();
+}
+
 }  // namespace labosm

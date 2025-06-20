@@ -42,22 +42,27 @@ void simpleServer(const std::string& fmi_file) {
             int end = std::stoi(req.get_param_value("end"));
             data.m_start = start;
             data.m_end = end;
-            auto start_time = std::chrono::steady_clock::now();
+            auto query_start_time = std::chrono::steady_clock::now();
             g.dijkstraQuery(data);
-            auto end_time = std::chrono::steady_clock::now();
-            std::cout << "Dijkstra Query Time: "
-                      << std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time).count() << "\n";
+            auto query_end_time = std::chrono::steady_clock::now();
+            long long query_time_ms =
+                std::chrono::duration_cast<std::chrono::microseconds>(query_end_time - query_start_time).count();
+            std::cout << "Dijkstra Query Time: " << query_time_ms << "\n";
+            std::cout << "Memory Usage: " << getMemoryUsage() << " KB\n";
+            std::cout << "PQ Pops: " << data.num_pq_pops << "\n";
             if (data.m_distance == std::numeric_limits<int>::max()) {
                 res.status = 400;
                 res.set_content(R"({"error": "No path found"})", "application/json");
                 return;
             }
 
-            start_time = std::chrono::steady_clock::now();
+            auto extraction_start_time = std::chrono::steady_clock::now();
             g.dijkstraExtractPath(data);
-            end_time = std::chrono::steady_clock::now();
-            std::cout << "Dijkstra Path Extraction Time: "
-                      << std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time).count() << "\n";
+            auto extraction_end_time = std::chrono::steady_clock::now();
+            long long extraction_time_ms =
+                std::chrono::duration_cast<std::chrono::microseconds>(extraction_end_time - extraction_start_time)
+                    .count();
+            std::cout << "Dijkstra Path Extraction Time: " << extraction_time_ms << "\n";
 
             res.status = 200;
 
@@ -74,7 +79,11 @@ void simpleServer(const std::string& fmi_file) {
 
             std::cout << "Distance: " << data.m_distance << "\n";
 
-            res.set_content(R"({"distance": )" + std::to_string(data.m_distance) + R"(,"path": )" + path_str + R"(})",
+            res.set_content(R"({"distance": )" + std::to_string(data.m_distance) + R"(,"path": )" + path_str +
+                                R"(,"pq_pops": )" + std::to_string(data.num_pq_pops) + R"(,"memory_usage": )" +
+                                std::to_string(getMemoryUsage()) + R"(,"query_time": )" +
+                                std::to_string(query_time_ms) + R"(,"extraction_time": )" +
+                                std::to_string(extraction_time_ms) + R"(})",
                             "application/json");
         } else {
             res.status = 400;
@@ -86,18 +95,21 @@ void simpleServer(const std::string& fmi_file) {
     svr.listen("0.0.0.0", 8080);
 }
 
-void advancedServer(const std::string& fmi_file) {
-    labosm::Graph g(fmi_file, true, 12, labosm::Heuristic::MIXED);
+void advancedServer(const std::string& fmi_file, bool enable_hub_labels) {
+    labosm::Graph g(fmi_file, true, 16, labosm::Heuristic::MIXED);
     labosm::QueryData data(g.getNumNodes());
 
-    g.createHubLabelsWithIS();
+    if (enable_hub_labels) {
+        g.createHubLabelsWithIS();
+    }
+    std::string enable_hub_labels_str = enable_hub_labels ? "true" : "false";
 
     httplib::Server svr;
     // first the static content: website etc.
     svr.set_mount_point("/", "static");
 
     svr.Get(R"(/api/)", [&](const httplib::Request& req, httplib::Response& res) {
-        res.set_content(R"({"type": "complex"})", "application/json");
+        res.set_content(R"({"type": "complex", "hub_labels": )" + enable_hub_labels_str + R"(})", "application/json");
     });
 
     // get the nearest node for given coords
@@ -124,11 +136,14 @@ void advancedServer(const std::string& fmi_file) {
             int end = std::stoi(req.get_param_value("end"));
             data.m_start = start;
             data.m_end = end;
-            auto start_time = std::chrono::steady_clock::now();
+            auto query_start_time = std::chrono::steady_clock::now();
             g.contractionHierarchyQuery(data);
-            auto end_time = std::chrono::steady_clock::now();
-            std::cout << "CH Query Time: "
-                      << std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time).count() << "\n";
+            auto query_end_time = std::chrono::steady_clock::now();
+            long long query_time_ms =
+                std::chrono::duration_cast<std::chrono::microseconds>(query_end_time - query_start_time).count();
+            std::cout << "CH Query Time: " << query_time_ms << "\n";
+            std::cout << "Memory Usage: " << getMemoryUsage() << " KB\n";
+            std::cout << "PQ Pops: " << data.num_pq_pops << "\n";
             std::cout << "Start: " << data.m_start << "\n";
             std::cout << "End: " << data.m_end << "\n";
             std::cout << "Distance: " << data.m_distance << "\n";
@@ -140,7 +155,7 @@ void advancedServer(const std::string& fmi_file) {
                 return;
             }
 
-            start_time = std::chrono::steady_clock::now();
+            auto extraction_start_time = std::chrono::steady_clock::now();
             // TODO: There still seems to be a bug in the path extraction
             // It gets stuck at one of the while loops
             // this occurs very rarely
@@ -148,9 +163,11 @@ void advancedServer(const std::string& fmi_file) {
             // So a mutex might be needed
 
             g.contractionHierarchyExtractPath(data);
-            end_time = std::chrono::steady_clock::now();
-            std::cout << "CH Path Extraction Time: "
-                      << std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time).count() << "\n";
+            auto extraction_end_time = std::chrono::steady_clock::now();
+            long long extraction_time_ms =
+                std::chrono::duration_cast<std::chrono::microseconds>(extraction_end_time - extraction_start_time)
+                    .count();
+            std::cout << "CH Path Extraction Time: " << extraction_time_ms << "\n";
 
             res.status = 200;
 
@@ -167,7 +184,11 @@ void advancedServer(const std::string& fmi_file) {
 
             std::cout << "Distance: " << data.m_distance << "\n";
 
-            res.set_content(R"({"distance": )" + std::to_string(data.m_distance) + R"(,"path": )" + path_str + R"(})",
+            res.set_content(R"({"distance": )" + std::to_string(data.m_distance) + R"(,"path": )" + path_str +
+                                R"(,"pq_pops": )" + std::to_string(data.num_pq_pops) + R"(,"memory_usage": )" +
+                                std::to_string(getMemoryUsage()) + R"(,"query_time": )" +
+                                std::to_string(query_time_ms) + R"(,"extraction_time": )" +
+                                std::to_string(extraction_time_ms) + R"(})",
                             "application/json");
         } else {
             res.status = 400;
@@ -177,16 +198,25 @@ void advancedServer(const std::string& fmi_file) {
 
     // Hub Label Query
     svr.Get(R"(/api/hub-label)", [&](const httplib::Request& req, httplib::Response& res) {
+        if (!enable_hub_labels) {
+            res.status = 400;
+            res.set_content(R"({"error": "Hub labeling is disabled on this server", "hub_labels": false})",
+                            "application/json");
+            return;
+        }
         if (req.has_param("start") && req.has_param("end")) {
             int start = std::stoi(req.get_param_value("start"));
             int end = std::stoi(req.get_param_value("end"));
             data.m_start = start;
             data.m_end = end;
-            auto start_time = std::chrono::steady_clock::now();
+            auto query_start_time = std::chrono::steady_clock::now();
             auto hub_indices = g.hubLabelQuery(data);
-            auto end_time = std::chrono::steady_clock::now();
-            std::cout << "Hub Label Query Time: "
-                      << std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time).count() << "\n";
+            auto query_end_time = std::chrono::steady_clock::now();
+            long long query_time_ms =
+                std::chrono::duration_cast<std::chrono::microseconds>(query_end_time - query_start_time).count();
+            std::cout << "Hub Label Query Time: " << query_time_ms << "\n";
+            std::cout << "Memory Usage: " << getMemoryUsage() << " KB\n";
+            std::cout << "PQ Pops: " << data.num_pq_pops << "\n";
             std::cout << "Start: " << data.m_start << "\n";
             std::cout << "End: " << data.m_end << "\n";
             std::cout << "Distance: " << data.m_distance << "\n";
@@ -198,7 +228,7 @@ void advancedServer(const std::string& fmi_file) {
                 return;
             }
 
-            start_time = std::chrono::steady_clock::now();
+            auto extraction_start_time = std::chrono::steady_clock::now();
             // TODO: There still seems to be a bug in the path extraction
             // It gets stuck at one of the while loops
             // this occurs very rarely
@@ -206,9 +236,11 @@ void advancedServer(const std::string& fmi_file) {
             // So a mutex might be needed
 
             g.hubLabelExtractPath(data, hub_indices);
-            end_time = std::chrono::steady_clock::now();
-            std::cout << "Hub Label Path Extraction Time: "
-                      << std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time).count() << "\n";
+            auto extraction_end_time = std::chrono::steady_clock::now();
+            long long extraction_time_ms =
+                std::chrono::duration_cast<std::chrono::microseconds>(extraction_end_time - extraction_start_time)
+                    .count();
+            std::cout << "Hub Label Path Extraction Time: " << extraction_time_ms << "\n";
 
             res.status = 200;
 
@@ -224,7 +256,11 @@ void advancedServer(const std::string& fmi_file) {
             }
             path_str += "]}";
 
-            res.set_content(R"({"distance": )" + std::to_string(data.m_distance) + R"(,"path": )" + path_str + R"(})",
+            res.set_content(R"({"distance": )" + std::to_string(data.m_distance) + R"(,"path": )" + path_str +
+                                R"(,"pq_pops": )" + std::to_string(data.num_pq_pops) + R"(,"memory_usage": )" +
+                                std::to_string(getMemoryUsage()) + R"(,"query_time": )" +
+                                std::to_string(query_time_ms) + R"(,"extraction_time": )" +
+                                std::to_string(extraction_time_ms) + R"(})",
                             "application/json");
         } else {
             res.status = 400;

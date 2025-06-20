@@ -143,6 +143,10 @@ class Graph {
     bool m_is;          // determines whether IS are used
     int m_num_threads;  // sets threads when using independent sets (IS)
 
+    std::vector<int> m_dijkstra_edge_indices;
+    std::vector<SimpleEdge> m_dijkstra_edges;
+
+    // used for CH/HL
     std::vector<std::vector<Edge>> m_graph;
     std::vector<std::vector<Edge>> m_reverse_graph;
     std::vector<int> m_node_level;
@@ -172,6 +176,26 @@ class Graph {
      * @param path
      */
     void readGraph(const std::string& path);
+
+    /**
+     * @brief Reads a simple graph from a file for dijkstra queries.
+     * @param path
+     */
+    void readSimpleGraph(const std::string& path);
+
+    /**
+     * @brief Writes the graph to a file in the FMI format including CH information.
+     *
+     * @param filename The name of the file to write to.
+     */
+    void writeGraphToCHFMI(const std::string& filename);
+
+    /**
+     * @brief Reads the graph from a CHFMI file.
+     * Should be a chfmi file.
+     * @param path
+     */
+    void readGraphFromCHFMI(const std::string& path);
 
     /**
      * @brief Creates the reverse graph.

@@ -100,7 +100,8 @@ class GraphCreator {
      * @param img_channels Number of image channels.
      * @return True if the point is in water, false otherwise.
      */
-    bool isPointInWaterImageBased(double lat_deg, double lon_deg, const unsigned char* img_data, int img_width, int img_height, int img_channels) const;
+    bool isPointInWaterImageBased(double lat_deg, double lon_deg, const unsigned char* img_data, int img_width,
+                                  int img_height, int img_channels) const;
 
     /**
      * @brief Checks if a point is in water using polygon-based filtering.
@@ -111,7 +112,9 @@ class GraphCreator {
      * @param poly_boxes Vector of bounding boxes for the polygons.
      * @return True if the point is in water, false otherwise.
      */
-    bool isPointInWaterPolygonBased(double lat_deg, double lon_deg, const std::vector<std::vector<labosm::Vec3>>& poly_vec_ways, const std::vector<labosm::BoudingBox>& poly_boxes) const;
+    bool isPointInWaterPolygonBased(double lat_deg, double lon_deg,
+                                    const std::vector<std::vector<labosm::Vec3>>& poly_vec_ways,
+                                    const std::vector<labosm::BoudingBox>& poly_boxes) const;
 
     /**
      * @brief Convert latitude and longitude to pixel coordinates.
@@ -168,5 +171,14 @@ class GraphCreator {
      */
     void writeGraphToFMI(const std::vector<std::pair<double, double>>& points,
                          const std::vector<std::vector<labosm::Edge>>& graph, const std::string& filename);
+
+    /**
+     * @brief Randomize the order of nodes using DFS.
+     *
+     * @param points The points to randomize.
+     * @param graph The graph corresponding to the points.
+     */
+    void randomizeNodeOrderDFS(std::vector<std::pair<double, double>>& points,
+                               std::vector<std::vector<labosm::Edge>>& graph);
 };
 }  // namespace labosm
