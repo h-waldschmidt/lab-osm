@@ -49,7 +49,11 @@ Graph::Graph(const std::string& path, bool ch_available, int num_threads, Heuris
             readGraph(path);
         else
             readSimpleGraph(path);
-        m_num_nodes = m_graph.size();
+
+        if (m_ch_available)
+            m_num_nodes = m_graph_edges.empty() ? 0 : static_cast<int>(m_graph_indices.size()) - 1;
+        else
+            m_num_nodes = static_cast<int>(m_dijkstra_indices.size()) - 1;
 
         if (m_ch_available) {
             createCHwithIS(ch_heuristic);
@@ -114,10 +118,38 @@ void Graph::readGraph(const std::string& path) {
         m_node_coords[i] = coords;
     }
 
-    m_graph.clear();
-    m_graph.resize(num_nodes);
+    // Initialize CH graph structures
+    m_graph_indices.clear();
+    m_graph_indices.resize(num_nodes + 1, 0);
+    m_graph_edges.clear();
 
-    // read edge information
+    // First pass: count edges per node to build indices
+    std::vector<int> edge_counts(num_nodes, 0);
+    std::streampos edge_start_pos = infile.tellg();
+
+    for (int i = 0; i < num_edges; ++i) {
+        getline(infile, line);
+        std::stringstream ss(line);
+
+        std::string s;
+        getline(ss, s, ' ');
+        int src = std::stoi(s);
+        edge_counts[src]++;
+    }
+
+    // Build indices array (cumulative sum)
+    for (int i = 0; i < num_nodes; ++i) {
+        m_graph_indices[i + 1] = m_graph_indices[i] + edge_counts[i];
+    }
+
+    // Reserve space for all edges
+    m_graph_edges.resize(m_graph_indices[num_nodes]);
+
+    // Reset to beginning of edge data
+    infile.seekg(edge_start_pos);
+
+    // Second pass: actually read and store edges
+    std::vector<uint64_t> current_positions = m_graph_indices;  // Copy of indices to track current position
     for (int i = 0; i < num_edges; ++i) {
         getline(infile, line);
         std::stringstream ss(line);
@@ -130,7 +162,7 @@ void Graph::readGraph(const std::string& path) {
         getline(ss, s, ' ');
         int cost = std::stoi(s);
 
-        m_graph[src].emplace_back(target, cost);
+        m_graph_edges[current_positions[src]++] = Edge(target, cost);
     }
 
     auto end = std::chrono::high_resolution_clock::now();
@@ -180,8 +212,10 @@ void Graph::readSimpleGraph(const std::string& path) {
         m_node_coords[i] = coords;
     }
 
-    m_graph.clear();
-    m_graph.resize(num_nodes);
+    // Initialize CH graph structures (not used in simple graph mode, but initialize to avoid issues)
+    m_graph_indices.clear();
+    m_graph_indices.resize(num_nodes + 1, 0);
+    m_graph_edges.clear();
 
     // Initialize dijkstra graph structures
     m_dijkstra_indices.clear();
@@ -240,13 +274,14 @@ void Graph::createReverseGraph() {
 
     auto begin = std::chrono::high_resolution_clock::now();
 
-    if (m_graph.empty() && m_graph_contr.empty()) {
+    if (m_graph_edges.empty() && m_graph_contr.empty()) {
         std::cout << "Can't create reverse graph, because graph is empty" << "\n";
         return;
     }
 
-    m_reverse_graph.clear();
-    m_reverse_graph.resize(m_num_nodes);
+    m_reverse_graph_indices.clear();
+    m_reverse_graph_indices.resize(m_num_nodes + 1, 0);
+    m_reverse_graph_edges.clear();
 
     if (m_ch_available)
         createReverseGraphCH();
@@ -353,8 +388,10 @@ void Graph::contractionHierarchyQuery(QueryData& data) {
             if (fwd_dist > data.m_distance) break;
 
             // forward step
-            for (int i = 0; i < m_graph[fwd_node_id].size(); ++i) {
-                Edge& e = m_graph[fwd_node_id][i];
+            uint64_t fwd_start_idx = m_graph_indices[fwd_node_id];
+            uint64_t fwd_end_idx = m_graph_indices[fwd_node_id + 1];
+            for (uint64_t i = fwd_start_idx; i < fwd_end_idx; ++i) {
+                Edge& e = m_graph_edges[i];
 
                 if (!data.m_visited_fwd[e.m_target] || data.m_distances_fwd[e.m_target] > fwd_dist + e.m_cost) {
                     if (!data.m_visited_fwd[e.m_target]) data.m_reset_nodes_fwd.push_back(e.m_target);
@@ -363,7 +400,7 @@ void Graph::contractionHierarchyQuery(QueryData& data) {
                     fwd_pq.emplace(data.m_distances_fwd[e.m_target], e.m_target);
                     data.m_visited_fwd[e.m_target] = true;
 
-                    data.m_fwd_prev_edge[e.m_target] = std::make_pair(fwd_node_id, i);
+                    data.m_fwd_prev_edge[e.m_target] = std::make_pair(fwd_node_id, static_cast<int>(i - fwd_start_idx));
                 }
 
                 if (data.m_visited_bwd[e.m_target] &&
@@ -386,8 +423,10 @@ void Graph::contractionHierarchyQuery(QueryData& data) {
             if (bwd_dist > data.m_distance) break;
 
             // backward step
-            for (int i = 0; i < m_reverse_graph[bwd_node_id].size(); ++i) {
-                Edge& e = m_reverse_graph[bwd_node_id][i];
+            uint64_t bwd_start_idx = m_reverse_graph_indices[bwd_node_id];
+            uint64_t bwd_end_idx = m_reverse_graph_indices[bwd_node_id + 1];
+            for (uint64_t i = bwd_start_idx; i < bwd_end_idx; ++i) {
+                Edge& e = m_reverse_graph_edges[i];
                 if (!data.m_visited_bwd[e.m_target] || data.m_distances_bwd[e.m_target] > bwd_dist + e.m_cost) {
                     if (!data.m_visited_bwd[e.m_target]) data.m_reset_nodes_bwd.push_back(e.m_target);
 
@@ -395,7 +434,7 @@ void Graph::contractionHierarchyQuery(QueryData& data) {
                     bwd_pq.emplace(data.m_distances_bwd[e.m_target], e.m_target);
                     data.m_visited_bwd[e.m_target] = true;
 
-                    data.m_bwd_prev_edge[e.m_target] = std::make_pair(bwd_node_id, i);
+                    data.m_bwd_prev_edge[e.m_target] = std::make_pair(bwd_node_id, static_cast<int>(i - bwd_start_idx));
                 }
 
                 if (data.m_visited_fwd[e.m_target] &&
@@ -485,11 +524,15 @@ void Graph::contractionHierarchyExtractPath(QueryData& data) {
 
 void Graph::unpackEdge(const std::tuple<int, int, bool>& edge_index, std::vector<int>& path) {
     const Edge* edge = nullptr;
-    // the bool indictes if we need to look at bwd or fwd edge/graph
+    // the bool indicates if we need to look at bwd or fwd edge/graph
     if (std::get<2>(edge_index)) {
-        edge = &m_graph[std::get<0>(edge_index)][std::get<1>(edge_index)];
+        // Forward graph: calculate absolute index from node and relative edge index
+        uint64_t node_start = m_graph_indices[std::get<0>(edge_index)];
+        edge = &m_graph_edges[node_start + std::get<1>(edge_index)];
     } else {
-        edge = &m_reverse_graph[std::get<0>(edge_index)][std::get<1>(edge_index)];
+        // Reverse graph: calculate absolute index from node and relative edge index
+        uint64_t node_start = m_reverse_graph_indices[std::get<0>(edge_index)];
+        edge = &m_reverse_graph_edges[node_start + std::get<1>(edge_index)];
     }
 
     if (!edge->isShortcut()) {
@@ -520,7 +563,7 @@ void Graph::createHubLabelsWithIS() {
     std::cout << "Started creating hub labels." << "\n";
     auto begin = std::chrono::high_resolution_clock::now();
 
-    if (m_graph.empty() || m_reverse_graph.empty()) {
+    if (m_graph_edges.empty() || m_reverse_graph_edges.empty()) {
         std::cout << "Can't create hub labels, because graph or reverse graph is empty" << "\n";
         return;
     }
@@ -539,13 +582,16 @@ void Graph::createHubLabelsWithIS() {
     m_fwd_hub_labels.reserve(estimated_total_labels);
     m_bwd_hub_labels.reserve(estimated_total_labels);
 
-    // Optimized level sorting using a map for O(log n) lookup instead of linear search
+    // Since nodes are already reordered by importance in createReverseGraphCH
+    // (node 0 = highest importance), we can process them in order without additional sorting
+
+    // Group nodes by level to process level by level (for parallel efficiency)
     std::unordered_map<int, std::vector<int>> level_buckets;
     for (int i = 0; i < m_num_nodes; i++) {
         level_buckets[m_node_level[i]].push_back(i);
     }
 
-    // Extract sorted levels
+    // Extract sorted levels (highest first)
     std::vector<int> different_levels_vec;
     different_levels_vec.reserve(level_buckets.size());
     for (const auto& pair : level_buckets) {
@@ -553,28 +599,11 @@ void Graph::createHubLabelsWithIS() {
     }
     std::sort(different_levels_vec.begin(), different_levels_vec.end(), std::greater<int>());
 
-    // Convert to vector of vectors for compatibility
+    // Convert to vector of vectors for processing
     std::vector<std::vector<int>> level_buckets_vec;
     level_buckets_vec.reserve(different_levels_vec.size());
     for (int level : different_levels_vec) {
         level_buckets_vec.push_back(std::move(level_buckets[level]));
-    }
-
-    // sort the levels, but don't change the original vector
-    m_level_indices_sorted.clear();
-    m_level_indices_sorted.reserve(m_num_nodes);  // Reserve space for all nodes
-
-    for (int i = 0; i < different_levels_vec.size(); ++i) {
-        for (int j = 0; j < level_buckets_vec[i].size(); ++j) {
-            m_level_indices_sorted.push_back(level_buckets_vec[i][j]);
-        }
-    }
-
-    m_node_indices.clear();
-    m_node_indices.resize(m_num_nodes);
-    // save for each node its corresponding index
-    for (int i = 0; i < m_num_nodes; ++i) {
-        m_node_indices[m_level_indices_sorted[i]] = i;
     }
 
     uint32_t num_calculated = 0;
@@ -595,13 +624,15 @@ void Graph::createHubLabelsWithIS() {
 
     for (int i = 0; i < different_levels_vec.size(); ++i) {
         if (i == 0) {
+            // Handle the highest level node (should be node 0 due to reordering)
             int node = level_buckets_vec[i][0];
             m_fwd_hub_labels.emplace_back(static_cast<uint32_t>(node), 0U, static_cast<uint16_t>(-1),
                                           static_cast<uint32_t>(-1));
             m_bwd_hub_labels.emplace_back(static_cast<uint32_t>(node), 0U, static_cast<uint16_t>(-1),
                                           static_cast<uint32_t>(-1));
-            m_fwd_indices[1] = 1;
-            m_bwd_indices[1] = 1;
+            // Since nodes are ordered by importance, node indices equal node IDs
+            m_fwd_indices[node + 1] = 1;
+            m_bwd_indices[node + 1] = 1;
             continue;
         }
 
@@ -621,18 +652,19 @@ void Graph::createHubLabelsWithIS() {
 
             // fwd labels - cache optimization to reduce repeated lookups
             const int node_level = m_node_level[node];
-            const int graph_size = static_cast<int>(m_graph[node].size());
+            const uint64_t graph_start_idx = m_graph_indices[node];
+            const uint64_t graph_end_idx = m_graph_indices[node + 1];
 
-            for (int k = 0; k < graph_size; ++k) {
-                const Edge& edge = m_graph[node][k];
+            for (uint64_t k = graph_start_idx; k < graph_end_idx; ++k) {
+                const Edge& edge = m_graph_edges[k];
 
-                // Cache target node index to avoid repeated lookup
-                const uint32_t target_node_idx = m_node_indices[edge.m_target];
-                for (uint64_t j = m_fwd_indices[target_node_idx]; j < m_fwd_indices[target_node_idx + 1]; j++) {
+                // Since nodes are ordered by importance, target node index equals target node ID
+                const int target_node = edge.m_target;
+                for (uint64_t j = m_fwd_indices[target_node]; j < m_fwd_indices[target_node + 1]; j++) {
                     fwd_labels.emplace_back(std::get<0>(m_fwd_hub_labels[j]),
                                             std::get<1>(m_fwd_hub_labels[j]) + static_cast<uint32_t>(edge.m_cost),
-                                            static_cast<uint16_t>(k),
-                                            static_cast<uint16_t>(j - m_fwd_indices[target_node_idx]));
+                                            static_cast<uint16_t>(k - graph_start_idx),  // Store relative edge index
+                                            static_cast<uint16_t>(j - m_fwd_indices[target_node]));
                 }
             }
 
@@ -670,18 +702,20 @@ void Graph::createHubLabelsWithIS() {
             }
 
             // bwd labels - cache optimization to reduce repeated lookups
-            const int reverse_graph_size = static_cast<int>(m_reverse_graph[node].size());
+            const uint64_t reverse_graph_start_idx = m_reverse_graph_indices[node];
+            const uint64_t reverse_graph_end_idx = m_reverse_graph_indices[node + 1];
 
-            for (int k = 0; k < reverse_graph_size; ++k) {
-                const Edge& edge = m_reverse_graph[node][k];
+            for (uint64_t k = reverse_graph_start_idx; k < reverse_graph_end_idx; ++k) {
+                const Edge& edge = m_reverse_graph_edges[k];
 
-                // Cache target node index to avoid repeated lookup
-                const uint32_t target_node_idx = m_node_indices[edge.m_target];
-                for (uint64_t j = m_bwd_indices[target_node_idx]; j < m_bwd_indices[target_node_idx + 1]; j++) {
-                    bwd_labels.emplace_back(std::get<0>(m_bwd_hub_labels[j]),
-                                            std::get<1>(m_bwd_hub_labels[j]) + static_cast<uint32_t>(edge.m_cost),
-                                            static_cast<uint16_t>(k),
-                                            static_cast<uint16_t>(j - m_bwd_indices[target_node_idx]));
+                // Since nodes are ordered by importance, target node index equals target node ID
+                const int target_node = edge.m_target;
+                for (uint64_t j = m_bwd_indices[target_node]; j < m_bwd_indices[target_node + 1]; j++) {
+                    bwd_labels.emplace_back(
+                        std::get<0>(m_bwd_hub_labels[j]),
+                        std::get<1>(m_bwd_hub_labels[j]) + static_cast<uint32_t>(edge.m_cost),
+                        static_cast<uint16_t>(k - reverse_graph_start_idx),  // Store relative edge index
+                        static_cast<uint16_t>(j - m_bwd_indices[target_node]));
                 }
             }
 
@@ -720,11 +754,9 @@ void Graph::createHubLabelsWithIS() {
 
 #pragma omp ordered
             {
-                int fwd_node_index = m_node_indices[node];
-                m_fwd_indices[fwd_node_index + 1] =
-                    m_fwd_indices[fwd_node_index] + static_cast<uint64_t>(fwd_labels.size());
-                m_bwd_indices[fwd_node_index + 1] =
-                    m_bwd_indices[fwd_node_index] + static_cast<uint64_t>(bwd_labels.size());
+                // Since nodes are already ordered by importance, node index equals node ID
+                m_fwd_indices[node + 1] = m_fwd_indices[node] + static_cast<uint64_t>(fwd_labels.size());
+                m_bwd_indices[node + 1] = m_bwd_indices[node] + static_cast<uint64_t>(bwd_labels.size());
 
                 for (const auto& label : fwd_labels) {
                     m_fwd_hub_labels.emplace_back(label);
@@ -765,11 +797,11 @@ std::pair<uint64_t, uint64_t> Graph::hubLabelQuery(QueryData& data) {
     data.m_distance = std::numeric_limits<int>::max();
     data.m_meeting_node = -1;
 
-    uint64_t fwd_node_index = m_fwd_indices[m_node_indices[data.m_start]];
-    uint64_t fwd_next_index = m_fwd_indices[m_node_indices[data.m_start] + 1];
+    uint64_t fwd_node_index = m_fwd_indices[data.m_start];
+    uint64_t fwd_next_index = m_fwd_indices[data.m_start + 1];
 
-    uint64_t bwd_node_index = m_bwd_indices[m_node_indices[data.m_end]];
-    uint64_t bwd_next_index = m_bwd_indices[m_node_indices[data.m_end] + 1];
+    uint64_t bwd_node_index = m_bwd_indices[data.m_end];
+    uint64_t bwd_next_index = m_bwd_indices[data.m_end + 1];
 
     uint64_t best_fwd_index = fwd_node_index;
     uint64_t best_bwd_index = bwd_node_index;
@@ -818,11 +850,13 @@ void Graph::hubLabelExtractPath(QueryData& data, std::pair<int, int> hub_indices
     while (cur_node != data.m_meeting_node) {
         std::cout << "Cur Node FWD: " << cur_node << "\n";
 
-        Edge e = m_graph[cur_node][std::get<2>(cur_fwd_label)];
+        // Get edge using flat structure: base index + relative edge index
+        uint64_t absolute_edge_idx = m_graph_indices[cur_node] + std::get<2>(cur_fwd_label);
+        Edge e = m_graph_edges[absolute_edge_idx];
         fwd_edges.push_back(std::make_tuple(cur_node, std::get<2>(cur_fwd_label), true));
         cur_node = e.m_target;
         // Calculate absolute index: base index for target node + offset stored in tuple
-        cur_fwd_label = m_fwd_hub_labels[m_fwd_indices[m_node_indices[cur_node]] + std::get<3>(cur_fwd_label)];
+        cur_fwd_label = m_fwd_hub_labels[m_fwd_indices[cur_node] + std::get<3>(cur_fwd_label)];
     }
 
     std::cout << "Debug before unpacking edges fwd" << "\n";
@@ -846,11 +880,13 @@ void Graph::hubLabelExtractPath(QueryData& data, std::pair<int, int> hub_indices
     cur_node = data.m_end;
     auto cur_bwd_label = m_bwd_hub_labels[hub_indices.second];
     while (cur_node != data.m_meeting_node) {
-        Edge e = m_reverse_graph[cur_node][std::get<2>(cur_bwd_label)];
+        // Get edge using flat structure: base index + relative edge index
+        uint64_t absolute_edge_idx = m_reverse_graph_indices[cur_node] + std::get<2>(cur_bwd_label);
+        Edge e = m_reverse_graph_edges[absolute_edge_idx];
         bwd_edges.push_back(std::make_tuple(cur_node, std::get<2>(cur_bwd_label), false));
         cur_node = e.m_target;
         // Calculate absolute index: base index for target node + offset stored in tuple
-        cur_bwd_label = m_bwd_hub_labels[m_bwd_indices[m_node_indices[cur_node]] + std::get<3>(cur_bwd_label)];
+        cur_bwd_label = m_bwd_hub_labels[m_bwd_indices[cur_node] + std::get<3>(cur_bwd_label)];
         std::cout << "Cur Node BWD: " << cur_node << "\n";
     }
 
@@ -936,96 +972,228 @@ int Graph::getNearestNode(double latitude, double longitude) {
 }
 
 void Graph::createReverseGraphNormal() {
-    for (int i = 0; i < m_num_nodes; ++i) {
-        for (Edge e : m_graph[i]) {
-            int new_source = e.m_target;
-            e.m_target = i;
+    // First pass: count edges per node for reverse graph
+    std::vector<int> reverse_edge_counts(m_num_nodes, 0);
 
-            m_reverse_graph[new_source].push_back(e);
+    for (int i = 0; i < m_num_nodes; ++i) {
+        uint64_t start_idx = m_graph_indices[i];
+        uint64_t end_idx = m_graph_indices[i + 1];
+        for (uint64_t j = start_idx; j < end_idx; ++j) {
+            const Edge& e = m_graph_edges[j];
+            reverse_edge_counts[e.m_target]++;
+        }
+    }
+
+    // Build reverse graph indices
+    for (int i = 0; i < m_num_nodes; ++i) {
+        m_reverse_graph_indices[i + 1] = m_reverse_graph_indices[i] + reverse_edge_counts[i];
+    }
+
+    // Reserve space for reverse edges
+    m_reverse_graph_edges.resize(m_reverse_graph_indices[m_num_nodes]);
+
+    // Second pass: populate reverse graph
+    std::vector<uint64_t> current_positions = m_reverse_graph_indices;
+    for (int i = 0; i < m_num_nodes; ++i) {
+        uint64_t start_idx = m_graph_indices[i];
+        uint64_t end_idx = m_graph_indices[i + 1];
+        for (uint64_t j = start_idx; j < end_idx; ++j) {
+            const Edge& e = m_graph_edges[j];
+            int new_source = e.m_target;
+            Edge reverse_edge = e;
+            reverse_edge.m_target = i;
+
+            m_reverse_graph_edges[current_positions[new_source]++] = reverse_edge;
         }
     }
 }
 
 void Graph::createReverseGraphCH() {
-    m_graph.clear();
-    m_graph.resize(m_num_nodes);
-    m_reverse_graph.clear();
-    m_reverse_graph.resize(m_num_nodes);
+    // Create mapping from old node IDs to new node IDs based on importance (highest importance gets ID 0)
+    std::vector<std::pair<int, int>> node_level_pairs;
+    for (int i = 0; i < m_num_nodes; ++i) {
+        node_level_pairs.push_back({m_node_level[i], i});
+    }
+
+    // Sort by level (highest level first), then by original node ID for stable ordering
+    std::sort(node_level_pairs.begin(), node_level_pairs.end(),
+              [](const std::pair<int, int>& a, const std::pair<int, int>& b) {
+                  if (a.first != b.first) return a.first > b.first;  // Higher level first
+                  return a.second < b.second;                        // Stable ordering for same level
+              });
+
+    // Create mapping arrays
+    m_old_to_new_mapping.resize(m_num_nodes);  // m_old_to_new_mapping[old_id] = new_id
+    m_new_to_old_mapping.resize(m_num_nodes);  // m_new_to_old_mapping[new_id] = old_id
+
+    for (int i = 0; i < m_num_nodes; ++i) {
+        int old_id = node_level_pairs[i].second;
+        int new_id = i;
+        m_old_to_new_mapping[old_id] = new_id;
+        m_new_to_old_mapping[new_id] = old_id;
+    }
+
+    // Create reordered copies of the contraction graphs with new node IDs
+    std::vector<std::vector<ContractionEdge>> reordered_graph_contr(m_num_nodes);
+
+    for (int old_i = 0; old_i < m_num_nodes; ++old_i) {
+        int new_i = m_old_to_new_mapping[old_i];
+
+        // Copy all edges with targets and contraction nodes remapped to new IDs
+        for (const auto& edge : m_graph_contr[old_i]) {
+            ContractionEdge new_edge = edge;
+            new_edge.m_target = m_old_to_new_mapping[edge.m_target];
+            // Update contraction node to new ID if it's a shortcut
+            if (new_edge.isShortcut()) {
+                new_edge.m_contraction_node = m_old_to_new_mapping[new_edge.m_contraction_node];
+            }
+            reordered_graph_contr[new_i].push_back(new_edge);
+        }
+    }
+
+    // Replace the original structure with reordered one
+    m_graph_contr = std::move(reordered_graph_contr);
+
+    // Update node_level array to match new ordering BEFORE edge separation
+    std::vector<int> new_node_level(m_num_nodes);
+    for (int new_i = 0; new_i < m_num_nodes; ++new_i) {
+        int old_i = m_new_to_old_mapping[new_i];
+        new_node_level[new_i] = m_node_level[old_i];
+    }
+    m_node_level = std::move(new_node_level);
+
+    // Now separate upward/downward edges using the NEW node ordering
     m_reverse_graph_contr.clear();
     m_reverse_graph_contr.resize(m_num_nodes);
 
-    for (int i = 0; i < m_num_nodes; ++i) {
-        for (auto iter = m_graph_contr[i].begin(); iter != m_graph_contr[i].end();) {
-            if (m_node_level[i] > m_node_level[iter->m_target]) {
-                ContractionEdge e = *iter;
-                int new_source = e.m_target;
-                e.m_target = i;
-                m_reverse_graph_contr[new_source].push_back(e);
-                iter = m_graph_contr[i].erase(iter);
+    for (int new_i = 0; new_i < m_num_nodes; ++new_i) {
+        for (auto iter = m_graph_contr[new_i].begin(); iter != m_graph_contr[new_i].end();) {
+            if (m_node_level[new_i] > m_node_level[iter->m_target]) {
+                ContractionEdge edge = *iter;
+                int new_source = edge.m_target;
+                edge.m_target = new_i;
+                m_reverse_graph_contr[new_source].push_back(edge);
+                iter = m_graph_contr[new_i].erase(iter);
             } else {
                 iter++;
             }
         }
     }
 
-    // copy the data
-    for (int i = 0; i < m_num_nodes; ++i) {
-        for (const auto& e : m_graph_contr[i]) {
-            m_graph[i].push_back(Edge(e.m_target, e.m_cost));
+    // Now reorder everything using the new node mapping
+    m_graph_indices.clear();
+    m_graph_indices.resize(m_num_nodes + 1, 0);
+    m_graph_edges.clear();
+    m_reverse_graph_indices.clear();
+    m_reverse_graph_indices.resize(m_num_nodes + 1, 0);
+
+    // Update node coordinates to match new ordering
+    if (!m_node_coords.empty()) {
+        std::vector<std::pair<double, double>> new_node_coords(m_num_nodes);
+        for (int new_i = 0; new_i < m_num_nodes; ++new_i) {
+            int old_i = m_new_to_old_mapping[new_i];
+            new_node_coords[new_i] = m_node_coords[old_i];
         }
-        for (const auto& e : m_reverse_graph_contr[i]) {
-            m_reverse_graph[i].push_back(Edge(e.m_target, e.m_cost));
+        m_node_coords = std::move(new_node_coords);
+    }
+
+    // First pass: count edges per node
+    std::vector<int> fwd_edge_counts(m_num_nodes, 0);
+    std::vector<int> bwd_edge_counts(m_num_nodes, 0);
+
+    for (int i = 0; i < m_num_nodes; ++i) {
+        fwd_edge_counts[i] = m_graph_contr[i].size();
+        bwd_edge_counts[i] = m_reverse_graph_contr[i].size();
+    }
+
+    // Build indices arrays
+    for (int i = 0; i < m_num_nodes; ++i) {
+        m_graph_indices[i + 1] = m_graph_indices[i] + fwd_edge_counts[i];
+        m_reverse_graph_indices[i + 1] = m_reverse_graph_indices[i] + bwd_edge_counts[i];
+    }
+
+    // Reserve space for all edges
+    m_graph_edges.resize(m_graph_indices[m_num_nodes]);
+    m_reverse_graph_edges.resize(m_reverse_graph_indices[m_num_nodes]);
+
+    // Copy the data to flat structures
+    for (int i = 0; i < m_num_nodes; ++i) {
+        uint64_t fwd_start = m_graph_indices[i];
+        uint64_t bwd_start = m_reverse_graph_indices[i];
+
+        for (size_t j = 0; j < m_graph_contr[i].size(); ++j) {
+            const auto& edge = m_graph_contr[i][j];
+            m_graph_edges[fwd_start + j] = Edge(edge.m_target, edge.m_cost);
+        }
+
+        for (size_t j = 0; j < m_reverse_graph_contr[i].size(); ++j) {
+            const auto& edge = m_reverse_graph_contr[i][j];
+            m_reverse_graph_edges[bwd_start + j] = Edge(edge.m_target, edge.m_cost);
         }
     }
 
     // find the correct shortcut pointers
     for (int i = 0; i < m_num_nodes; ++i) {
-        for (int j = 0; j < m_graph_contr[i].size(); ++j) {
-            const ContractionEdge& e = m_graph_contr[i][j];
-            if (e.isShortcut()) {
+        uint64_t fwd_start = m_graph_indices[i];
+
+        for (size_t j = 0; j < m_graph_contr[i].size(); ++j) {
+            const ContractionEdge& edge = m_graph_contr[i][j];
+            if (edge.isShortcut()) {
                 // child 1 must be in the downward graph, while child 2 must be in the upward graph
 
                 std::tuple<int, int, bool> child_1;
-                for (int k = 0; k < m_reverse_graph[e.m_contraction_node].size(); ++k) {
-                    if (m_reverse_graph[e.m_contraction_node][k].m_target == i) {
-                        child_1 = std::make_tuple(e.m_contraction_node, static_cast<uint16_t>(k), false);
+                uint64_t rev_start = m_reverse_graph_indices[edge.m_contraction_node];
+                uint64_t rev_end = m_reverse_graph_indices[edge.m_contraction_node + 1];
+                for (uint64_t k = rev_start; k < rev_end; ++k) {
+                    if (m_reverse_graph_edges[k].m_target == i) {
+                        child_1 = std::make_tuple(edge.m_contraction_node, static_cast<uint16_t>(k - rev_start), false);
                         break;
                     }
                 }
 
                 std::tuple<int, int, bool> child_2;
-                for (int k = 0; k < m_graph[e.m_contraction_node].size(); ++k) {
-                    if (m_graph[e.m_contraction_node][k].m_target == e.m_target) {
-                        child_2 = std::make_tuple(e.m_contraction_node, static_cast<uint16_t>(k), true);
+                uint64_t fwd_start_child = m_graph_indices[edge.m_contraction_node];
+                uint64_t fwd_end_child = m_graph_indices[edge.m_contraction_node + 1];
+                for (uint64_t k = fwd_start_child; k < fwd_end_child; ++k) {
+                    if (m_graph_edges[k].m_target == edge.m_target) {
+                        child_2 =
+                            std::make_tuple(edge.m_contraction_node, static_cast<uint16_t>(k - fwd_start_child), true);
                         break;
                     }
                 }
-                m_graph[i][j].m_child_1 = child_1;
-                m_graph[i][j].m_child_2 = child_2;
+                m_graph_edges[fwd_start + j].m_child_1 = child_1;
+                m_graph_edges[fwd_start + j].m_child_2 = child_2;
             }
         }
 
-        for (int j = 0; j < m_reverse_graph_contr[i].size(); ++j) {
-            const ContractionEdge& e = m_reverse_graph_contr[i][j];
-            if (e.isShortcut()) {
+        uint64_t bwd_start = m_reverse_graph_indices[i];
+        for (size_t j = 0; j < m_reverse_graph_contr[i].size(); ++j) {
+            const ContractionEdge& edge = m_reverse_graph_contr[i][j];
+            if (edge.isShortcut()) {
                 // child 1 must be in the upward graph, while child 2 must be in the downward graph
                 std::tuple<int, int, bool> child_1;
-                for (int k = 0; k < m_graph[e.m_contraction_node].size(); ++k) {
-                    if (m_graph[e.m_contraction_node][k].m_target == i) {
-                        child_1 = std::make_tuple(e.m_contraction_node, static_cast<uint16_t>(k), true);
+                uint64_t fwd_start_child = m_graph_indices[edge.m_contraction_node];
+                uint64_t fwd_end_child = m_graph_indices[edge.m_contraction_node + 1];
+                for (uint64_t k = fwd_start_child; k < fwd_end_child; ++k) {
+                    if (m_graph_edges[k].m_target == i) {
+                        child_1 =
+                            std::make_tuple(edge.m_contraction_node, static_cast<uint16_t>(k - fwd_start_child), true);
                         break;
                     }
                 }
 
                 std::tuple<int, int, bool> child_2;
-                for (int k = 0; k < m_reverse_graph[e.m_contraction_node].size(); ++k) {
-                    if (m_reverse_graph[e.m_contraction_node][k].m_target == e.m_target) {
-                        child_2 = std::make_tuple(e.m_contraction_node, static_cast<uint16_t>(k), false);
+                uint64_t rev_start_child = m_reverse_graph_indices[edge.m_contraction_node];
+                uint64_t rev_end_child = m_reverse_graph_indices[edge.m_contraction_node + 1];
+                for (uint64_t k = rev_start_child; k < rev_end_child; ++k) {
+                    if (m_reverse_graph_edges[k].m_target == edge.m_target) {
+                        child_2 =
+                            std::make_tuple(edge.m_contraction_node, static_cast<uint16_t>(k - rev_start_child), false);
                         break;
                     }
                 }
-                m_reverse_graph[i][j].m_child_1 = child_1;
-                m_reverse_graph[i][j].m_child_2 = child_2;
+                m_reverse_graph_edges[bwd_start + j].m_child_1 = child_1;
+                m_reverse_graph_edges[bwd_start + j].m_child_2 = child_2;
             }
         }
     }
@@ -1039,7 +1207,7 @@ void Graph::createCHwithIS(Heuristic heuristic) {
 
     auto begin = std::chrono::high_resolution_clock::now();
 
-    if (m_graph.empty()) {
+    if (m_graph_edges.empty()) {
         std::cout << "Can't create CH, because graph is empty." << "\n";
         return;
     }
@@ -1203,7 +1371,10 @@ void Graph::createContractionGraphs() {
     m_reverse_graph_contr.resize(m_num_nodes);
 
     for (int i = 0; i < m_num_nodes; ++i) {
-        for (Edge& e : m_graph[i]) {
+        uint64_t start_idx = m_graph_indices[i];
+        uint64_t end_idx = m_graph_indices[i + 1];
+        for (uint64_t j = start_idx; j < end_idx; ++j) {
+            const Edge& e = m_graph_edges[j];
             m_graph_contr[i].push_back(ContractionEdge(e.m_target, e.m_cost));
             m_reverse_graph_contr[e.m_target].push_back(ContractionEdge(i, e.m_cost));
         }
@@ -1524,8 +1695,8 @@ int Graph::simplifiedHubLabelQuery(std::vector<std::tuple<uint32_t, uint32_t, ui
                                    int node) {
     int distance = std::numeric_limits<int>::max();
     auto fwd_iter = fwd_labels.begin();
-    uint64_t bwd_node_index = m_bwd_indices[m_node_indices[node]];
-    uint64_t bwd_next_index = m_bwd_indices[m_node_indices[node] + 1];
+    uint64_t bwd_node_index = m_bwd_indices[node];
+    uint64_t bwd_next_index = m_bwd_indices[node + 1];
 
     while (fwd_iter != fwd_labels.end() && bwd_node_index < bwd_next_index) {
         if (std::get<0>(*fwd_iter) == std::get<0>(m_bwd_hub_labels[bwd_node_index])) {
@@ -1547,8 +1718,8 @@ int Graph::simplifiedHubLabelQuery(std::vector<std::tuple<uint32_t, uint32_t, ui
 int Graph::simplifiedHubLabelQuery(int node,
                                    std::vector<std::tuple<uint32_t, uint32_t, uint16_t, uint16_t>>& bwd_labels) {
     int distance = std::numeric_limits<int>::max();
-    uint64_t fwd_node_index = m_fwd_indices[m_node_indices[node]];
-    uint64_t fwd_next_index = m_fwd_indices[m_node_indices[node] + 1];
+    uint64_t fwd_node_index = m_fwd_indices[node];
+    uint64_t fwd_next_index = m_fwd_indices[node + 1];
     auto bwd_iter = bwd_labels.begin();
 
     while (fwd_node_index < fwd_next_index && bwd_iter != bwd_labels.end()) {

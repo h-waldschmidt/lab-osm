@@ -103,6 +103,8 @@ struct Edge {
     // represents the underlying edges if this is a shortcut
     std::tuple<int, uint16_t, bool> m_child_1;
     std::tuple<int, uint16_t, bool> m_child_2;
+
+    Edge() : m_target(0), m_cost(0), m_child_1({-1, -1, false}), m_child_2({-1, -1, false}) {}
     Edge(int target, int cost)
         : m_target(target), m_cost(cost), m_child_1({-1, -1, false}), m_child_2({-1, -1, false}) {}
     Edge(int target, int cost, std::tuple<int, int, bool> child_1, std::tuple<int, int, bool> child_2)

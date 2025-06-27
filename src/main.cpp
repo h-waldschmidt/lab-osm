@@ -157,8 +157,22 @@ void runBenchmarks(const std::string& fmi_path, int num_queries_param, bool enab
 
         for (int i = 0; i < num_queries_param; ++i) {
             query_data_ch.reset();
-            query_data_ch.m_start = queries[i].first;
-            query_data_ch.m_end = queries[i].second;
+
+            // Map query node IDs to the reordered CH node IDs
+            int start_old = queries[i].first;
+            int end_old = queries[i].second;
+            int start_new = graph_ch_hl.getNewNodeId(start_old);
+            int end_new = graph_ch_hl.getNewNodeId(end_old);
+
+            // Skip this query if node mapping failed (shouldn't happen in normal cases)
+            if (start_new == -1 || end_new == -1) {
+                std::cout << "  WARNING: Skipping CH query " << i << " due to invalid node mapping (" << start_old
+                          << "->" << end_old << ")" << std::endl;
+                continue;
+            }
+
+            query_data_ch.m_start = start_new;
+            query_data_ch.m_end = end_new;
 
             auto query_start_time = std::chrono::high_resolution_clock::now();
             graph_ch_hl.contractionHierarchyQuery(query_data_ch);
@@ -209,8 +223,22 @@ void runBenchmarks(const std::string& fmi_path, int num_queries_param, bool enab
             labosm::QueryData query_data_hl(graph_ch_hl.getNumNodes());
             for (int i = 0; i < num_queries_param; ++i) {
                 query_data_hl.reset();
-                query_data_hl.m_start = queries[i].first;
-                query_data_hl.m_end = queries[i].second;
+
+                // Map query node IDs to the reordered CH node IDs
+                int start_old = queries[i].first;
+                int end_old = queries[i].second;
+                int start_new = graph_ch_hl.getNewNodeId(start_old);
+                int end_new = graph_ch_hl.getNewNodeId(end_old);
+
+                // Skip this query if node mapping failed (shouldn't happen in normal cases)
+                if (start_new == -1 || end_new == -1) {
+                    std::cout << "  WARNING: Skipping HL query " << i << " due to invalid node mapping (" << start_old
+                              << "->" << end_old << ")" << std::endl;
+                    continue;
+                }
+
+                query_data_hl.m_start = start_new;
+                query_data_hl.m_end = end_new;
                 std::pair<uint32_t, uint32_t> hub_indices;
                 auto query_start_time = std::chrono::high_resolution_clock::now();
                 hub_indices = graph_ch_hl.hubLabelQuery(query_data_hl);

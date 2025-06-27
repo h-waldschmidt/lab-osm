@@ -108,6 +108,41 @@ class Graph {
 
     std::pair<double, double> getNodeCoords(int node) { return m_node_coords[node]; }
 
+    /**
+     * @brief Get the new node ID corresponding to an old node ID after CH reordering.
+     * Returns -1 if no reordering has been performed or if the old_id is invalid.
+     *
+     * @param old_id Original node ID before CH reordering
+     * @return New node ID after CH reordering, or -1 if invalid
+     */
+    int getNewNodeId(int old_id) const {
+        if (m_old_to_new_mapping.empty() || old_id < 0 || old_id >= m_old_to_new_mapping.size()) {
+            return -1;
+        }
+        return m_old_to_new_mapping[old_id];
+    }
+
+    /**
+     * @brief Get the old node ID corresponding to a new node ID after CH reordering.
+     * Returns -1 if no reordering has been performed or if the new_id is invalid.
+     *
+     * @param new_id New node ID after CH reordering
+     * @return Original node ID before CH reordering, or -1 if invalid
+     */
+    int getOldNodeId(int new_id) const {
+        if (m_new_to_old_mapping.empty() || new_id < 0 || new_id >= m_new_to_old_mapping.size()) {
+            return -1;
+        }
+        return m_new_to_old_mapping[new_id];
+    }
+
+    /**
+     * @brief Check if node reordering has been performed (i.e., CH has been built with reordering).
+     *
+     * @return true if node reordering has been performed, false otherwise
+     */
+    bool hasNodeReordering() const { return !m_old_to_new_mapping.empty(); }
+
     void setNumThreads(int num_of_threads) { m_num_threads = num_of_threads; }
 
     /**
@@ -131,6 +166,17 @@ class Graph {
         std::vector<SimpleEdge>().swap(m_dijkstra_edges);
     }
 
+    /**
+     * @brief Clears all the CH graph data from memory.
+     * Useful for freeing memory when CH functionality is no longer needed.
+     */
+    void clearCHGraph() {
+        std::vector<uint64_t>().swap(m_graph_indices);
+        std::vector<Edge>().swap(m_graph_edges);
+        std::vector<uint64_t>().swap(m_reverse_graph_indices);
+        std::vector<Edge>().swap(m_reverse_graph_edges);
+    }
+
    private:
     bool m_ch_available;  // ch/CH = Contraction Hierarchy
     int m_num_nodes;
@@ -141,9 +187,12 @@ class Graph {
     std::vector<uint64_t> m_dijkstra_indices;  // indices for each node to the corresponding edges
     std::vector<SimpleEdge> m_dijkstra_edges;  // flat vector containing all edges
 
-    // used for CH/HL
-    std::vector<std::vector<Edge>> m_graph;
-    std::vector<std::vector<Edge>> m_reverse_graph;
+    // used for CH/HL - flat edge storage
+    std::vector<uint64_t> m_graph_indices;  // indices for each node to the corresponding edges in m_graph_edges
+    std::vector<Edge> m_graph_edges;        // flat vector containing all forward edges
+    std::vector<uint64_t>
+        m_reverse_graph_indices;  // indices for each node to the corresponding edges in m_reverse_graph_edges
+    std::vector<Edge> m_reverse_graph_edges;  // flat vector containing all reverse edges
     std::vector<int> m_node_level;
     std::vector<std::pair<double, double>> m_node_coords;
 
@@ -154,9 +203,6 @@ class Graph {
     std::vector<std::vector<ContractionEdge>> m_graph_contr;
     std::vector<std::vector<ContractionEdge>> m_reverse_graph_contr;
 
-    // needed for hub label creation since, we go from the highest level to the lowest level
-    std::vector<int> m_level_indices_sorted;
-    std::vector<int> m_node_indices;
     // indices for each nodes to the corresponding hub labels
     std::vector<uint64_t> m_fwd_indices;
     std::vector<uint64_t> m_bwd_indices;
@@ -165,6 +211,10 @@ class Graph {
     // Using smaller types: uint32_t for node IDs and distances, uint16_t for edge indices and hub label offsets
     std::vector<std::tuple<uint32_t, uint32_t, uint16_t, uint16_t>> m_fwd_hub_labels;
     std::vector<std::tuple<uint32_t, uint32_t, uint16_t, uint16_t>> m_bwd_hub_labels;
+
+    // Node ID mapping after CH reordering (highest importance gets node_id 0)
+    std::vector<int> m_old_to_new_mapping;  // m_old_to_new_mapping[old_id] = new_id
+    std::vector<int> m_new_to_old_mapping;  // m_new_to_old_mapping[new_id] = old_id
 
     /**
      * @brief Reads the graph from a file.
