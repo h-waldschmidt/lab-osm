@@ -1,5 +1,7 @@
 #include "server.h"
 
+#include <mutex>
+
 #include "graph.h"
 #include "httplib.h"
 
@@ -9,6 +11,7 @@ void simpleServer(const std::string& fmi_file) {
     labosm::Graph g(fmi_file, false, 1, labosm::Heuristic::IN_OUT);
 
     labosm::DijkstraQueryData data(g.getNumNodes());
+    std::mutex query_mutex;  // Mutex to prevent concurrent requests
 
     httplib::Server svr;
     // first the static content: website etc.
@@ -38,6 +41,8 @@ void simpleServer(const std::string& fmi_file) {
     // dijkstra query
     svr.Get(R"(/api/dijkstra)", [&](const httplib::Request& req, httplib::Response& res) {
         if (req.has_param("start") && req.has_param("end")) {
+            std::lock_guard<std::mutex> lock(query_mutex);  // Lock to prevent concurrent access
+
             int start = std::stoi(req.get_param_value("start"));
             int end = std::stoi(req.get_param_value("end"));
             data.m_start = start;
@@ -98,6 +103,7 @@ void simpleServer(const std::string& fmi_file) {
 void advancedServer(const std::string& fmi_file, bool enable_hub_labels) {
     labosm::Graph g(fmi_file, true, 16, labosm::Heuristic::MIXED);
     labosm::QueryData data(g.getNumNodes());
+    std::mutex query_mutex;  // Mutex to prevent concurrent requests
 
     if (enable_hub_labels) {
         g.createHubLabelsWithIS();
@@ -132,6 +138,8 @@ void advancedServer(const std::string& fmi_file, bool enable_hub_labels) {
     // CH query
     svr.Get(R"(/api/ch)", [&](const httplib::Request& req, httplib::Response& res) {
         if (req.has_param("start") && req.has_param("end")) {
+            std::lock_guard<std::mutex> lock(query_mutex);  // Lock to prevent concurrent access
+
             int start = std::stoi(req.get_param_value("start"));
             int end = std::stoi(req.get_param_value("end"));
             data.m_start = start;
@@ -156,12 +164,6 @@ void advancedServer(const std::string& fmi_file, bool enable_hub_labels) {
             }
 
             auto extraction_start_time = std::chrono::steady_clock::now();
-            // TODO: There still seems to be a bug in the path extraction
-            // It gets stuck at one of the while loops
-            // this occurs very rarely
-            // I think this might be an issue due to multiple requests at the same time
-            // So a mutex might be needed
-
             g.contractionHierarchyExtractPath(data);
             auto extraction_end_time = std::chrono::steady_clock::now();
             long long extraction_time_ms =
@@ -205,6 +207,8 @@ void advancedServer(const std::string& fmi_file, bool enable_hub_labels) {
             return;
         }
         if (req.has_param("start") && req.has_param("end")) {
+            std::lock_guard<std::mutex> lock(query_mutex);  // Lock to prevent concurrent access
+
             int start = std::stoi(req.get_param_value("start"));
             int end = std::stoi(req.get_param_value("end"));
             data.m_start = start;
@@ -229,12 +233,6 @@ void advancedServer(const std::string& fmi_file, bool enable_hub_labels) {
             }
 
             auto extraction_start_time = std::chrono::steady_clock::now();
-            // TODO: There still seems to be a bug in the path extraction
-            // It gets stuck at one of the while loops
-            // this occurs very rarely
-            // I think this might be an issue due to multiple requests at the same time
-            // So a mutex might be needed
-
             g.hubLabelExtractPath(data, hub_indices);
             auto extraction_end_time = std::chrono::steady_clock::now();
             long long extraction_time_ms =

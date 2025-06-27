@@ -3,6 +3,7 @@
 #include <omp.h>
 #include <stdint.h>
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -15,17 +16,6 @@ namespace labosm {
  */
 class Graph {
    public:
-    /**
-     * @brief Construct a new Graph object independent sets (IS)
-     *
-     * @param path          specifies location of graph
-     * @param read_mode     specifies if CH is pre-calculated and stored in graph-file
-     * @param ch_available  specifies if CH should be used
-     * @param ch_heuristic  specifies which heuristic to use
-     * @param dist_mode     specifies whether to use travel time or distance in meter metric
-     */
-    Graph(const std::string& path, bool ch_available, Heuristic ch_heuristic);
-
     // constructor with independent sets (IS)
     /**
      * @brief Construct a new Graph object with independent sets (IS)
@@ -75,11 +65,6 @@ class Graph {
     void contractionHierarchyExtractPath(QueryData& data);
 
     /**
-     * @brief Create a hub labeling when not using IS for CH.
-     */
-    void createHubLabelsWithoutIS();
-
-    /**
      * @brief Create a hub labeling when using IS for CH.
      * Implementation uses OpenMP for parallelization with specified number of threads.
      */
@@ -91,7 +76,7 @@ class Graph {
      *
      * @param data
      */
-    std::pair<uint32_t, uint32_t> hubLabelQuery(QueryData& data);
+    std::pair<uint64_t, uint64_t> hubLabelQuery(QueryData& data);
 
     /**
      * @brief Extracts the path from the data structure.
@@ -131,10 +116,10 @@ class Graph {
      *
      */
     void clearHubLabel() {
-        std::vector<uint32_t>().swap(m_fwd_indices);
-        std::vector<uint32_t>().swap(m_bwd_indices);
-        std::vector<std::tuple<int, int, int, int>>().swap(m_fwd_hub_labels);
-        std::vector<std::tuple<int, int, int, int>>().swap(m_bwd_hub_labels);
+        std::vector<uint64_t>().swap(m_fwd_indices);
+        std::vector<uint64_t>().swap(m_bwd_indices);
+        std::vector<std::tuple<uint32_t, uint32_t, uint16_t, uint16_t>>().swap(m_fwd_hub_labels);
+        std::vector<std::tuple<uint32_t, uint32_t, uint16_t, uint16_t>>().swap(m_bwd_hub_labels);
     }
 
    private:
@@ -143,8 +128,7 @@ class Graph {
     bool m_is;          // determines whether IS are used
     int m_num_threads;  // sets threads when using independent sets (IS)
 
-    std::vector<int> m_dijkstra_edge_indices;
-    std::vector<SimpleEdge> m_dijkstra_edges;
+    std::vector<std::vector<SimpleEdge>> m_dijkstra_graph;
 
     // used for CH/HL
     std::vector<std::vector<Edge>> m_graph;
@@ -163,12 +147,13 @@ class Graph {
     std::vector<int> m_level_indices_sorted;
     std::vector<int> m_node_indices;
     // indices for each nodes to the corresponding hub labels
-    std::vector<uint32_t> m_fwd_indices;
-    std::vector<uint32_t> m_bwd_indices;
+    std::vector<uint64_t> m_fwd_indices;
+    std::vector<uint64_t> m_bwd_indices;
     // first is hub node, second is distance to the hub node, third is edge_index in the graph (edge to that hub
-    // node), fourth is the index to the original hub
-    std::vector<std::tuple<int, int, int, int>> m_fwd_hub_labels;
-    std::vector<std::tuple<int, int, int, int>> m_bwd_hub_labels;
+    // node), fourth is the offset to the original hub within the node's hub labels
+    // Using smaller types: uint32_t for node IDs and distances, uint16_t for edge indices and hub label offsets
+    std::vector<std::tuple<uint32_t, uint32_t, uint16_t, uint16_t>> m_fwd_hub_labels;
+    std::vector<std::tuple<uint32_t, uint32_t, uint16_t, uint16_t>> m_bwd_hub_labels;
 
     /**
      * @brief Reads the graph from a file.
@@ -216,14 +201,6 @@ class Graph {
      * Is used when using the simpleserver/dijkstra mode.
      */
     void createReverseGraphNormal();
-
-    /**
-     * @brief Calculates hierarchy and adds shortcuts to graph without using independent sets.
-     * This means that each node has a distinct level/hierarchy value.
-     *
-     * @param heuristic
-     */
-    void createCHwithoutIS(Heuristic heuristic);
 
     /**
      * @brief Calculates hierarchy and adds shortcuts to graph without using independent sets.
@@ -291,7 +268,7 @@ class Graph {
      * @param node
      * @return distance to the node
      */
-    int simplifiedHubLabelQuery(std::vector<std::tuple<int, int, int, int>>& fwd_labels, int node);
+    int simplifiedHubLabelQuery(std::vector<std::tuple<uint32_t, uint32_t, uint16_t, uint16_t>>& fwd_labels, int node);
 
     /**
      * @brief Simplified hub label query that is used during the construction of the hub labels.
@@ -300,7 +277,7 @@ class Graph {
      * @param bwd_labels
      * @return distance to the node
      */
-    int simplifiedHubLabelQuery(int node, std::vector<std::tuple<int, int, int, int>>& bwd_labels);
+    int simplifiedHubLabelQuery(int node, std::vector<std::tuple<uint32_t, uint32_t, uint16_t, uint16_t>>& bwd_labels);
 
     /**
      * @brief Unpacks shortcut edges into the original edges.

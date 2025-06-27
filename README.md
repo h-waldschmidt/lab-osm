@@ -28,43 +28,45 @@ Example workflow looks like this to generate graph with `4M` points and run simp
 - Generating FMI Graph with 16 Threads and `4000000` Points: `9874 = 9,8s`
   - Results in `21754558` Edges
 
+TODO: 9836595ms for 1M Graph
+
 ### Preprocessing Time
 
 #### Stuttgart Graph (Nodes: 1132113 Edges: 2292887)
 
 | Heuristic       | CH  | Hub labels | Edges   |
 | --------------- | --- | ---------- | ------- |
-| IN_OUT          | 4s  | 84s        | 4603434 |
-| EDGE_DIFFERENCE | 8s  | 57s        | 4633215 |
-| WEIGHTED_COST   | 16s | 50s        | 4719853 |
-| MIXED           | 11s | 39s        | 4435926 |
+| IN_OUT          | 4s  | 16s        | 4583380 |
+| EDGE_DIFFERENCE | 9s  | 10s        | 4617667 |
+| WEIGHTED_COST   | 19s | 9s         | 4721720 |
+| MIXED           | 13s | 7s         | 4431611 |
 
 #### BW Graph (Nodes: 3600520 Edges: 7300290)
 
 | Heuristic       | CH  | Hub labels | Edges    |
 | --------------- | --- | ---------- | -------- |
-| IN_OUT          | 18s | 631s       | 14689308 |
-| EDGE_DIFFERENCE | 30s | 293s       | 14764608 |
-| WEIGHTED_COST   | 60s | 266s       | 15056195 |
-| MIXED           | 39s | 219s       | 14165279 |
+| IN_OUT          | 18s | 82s        | 14632356 |
+| EDGE_DIFFERENCE | 38s | 47s        | 14716275 |
+| WEIGHTED_COST   | 79s | 44s        | 15063747 |
+| MIXED           | 53s | 37s        | 14157775 |
 
-#### Ocean Graph 1M (Nodes: 1000000 Edges: )
+#### Ocean Graph 1M (Nodes: 1000000 Edges: 4421584)
 
-| Heuristic       | CH   | Hub labels | Edges |
-| --------------- | ---- | ---------- | ----- |
-| IN_OUT          | 665s |            |       |
-| EDGE_DIFFERENCE | 471s |            |       |
-| WEIGHTED_COST   | 946s |            |       |
-| MIXED           | 416s |            |       |
+| Heuristic       | CH   | Hub labels | Edges    |
+| --------------- | ---- | ---------- | -------- |
+| IN_OUT          | 660s | 611s       | 13263627 |
+| EDGE_DIFFERENCE | 420s | 349s       | 12026983 |
+| WEIGHTED_COST   | 835s | 319s       | 12278641 |
+| MIXED           | 395s | 301s       | 11027721 |
 
 #### Ocean Graph 4M (Nodes: 4000000 Edges: 21757192)
 
 | Heuristic       | CH      | Hub labels | Edges     |
 | --------------- | ------- | ---------- | --------- |
-| IN_OUT          | 136876s |            | 110565282 |
-| EDGE_DIFFERENCE | 39733s  |            | 90368552  |
-| WEIGHTED_COST   | 109283s |            | 95500429  |
-| MIXED           | 58858s  |            | 83502065  |
+| IN_OUT          | 125373s | N/A        | 110253218 |
+| EDGE_DIFFERENCE | 39411s  | N/A        | 90591032  |
+| WEIGHTED_COST   | 99414s  | N/A        | 95547492  |
+| MIXED           | 48650s  |            | 83298576  |
 
 
 ### Query Time
@@ -72,6 +74,8 @@ Example workflow looks like this to generate graph with `4M` points and run simp
 10000 Random queries
 
 #### Stuttgart Graph
+
+With `std::priority_queue`:
 
 | Algorithm                       | Avg. Query Time (us) | Avg. Path Time (us) | Avg. PQ Pops | Avg. Label Size | Speed-up |
 | ------------------------------- | -------------------- | ------------------- | ------------ | --------------- | -------- |
@@ -85,7 +89,23 @@ Example workflow looks like this to generate graph with `4M` points and run simp
 | CH (MIXED)                      | 66.2676              | 108.754             | 495.195      | N/A             | 1298.76x |
 | Hub Labels (MIXED CH)           | 1.3206               | 103.183             | 0            | 59.4003         | 65171.7x |
 
+With `radix_heap::pair_radix_heap`:
+
+| Algorithm                       | Avg. Query Time (us) | Avg. Path Time (us) | Avg. PQ Pops | Avg. Label Size | Speed-up |
+| ------------------------------- | -------------------- | ------------------- | ------------ | --------------- | -------- |
+| Dijkstra                        | 53291.3              | 17.6208             | 590149       | N/A             | 1x       |
+| CH (IN_OUT)                     | 123.723              | 92.6065             | 839.63       | N/A             | 430.732x |
+| Hub Labels (IN_OUT CH)          | 1.1348               | 82.4076             | 0            | 93.5065         | 46960.9x |
+| CH (EDGE_DIFFERENCE)            | 94.5666              | 87.9531             | 685.477      | N/A             | 563.532x |
+| Hub Labels (EDGE_DIFFERENCE CH) | 1.0923               | 80.7168             | 0            | 70.9465         | 48788.1x |
+| CH (WEIGHTED_COST)              | 89.8271              | 90.4479             | 627.647      | N/A             | 593.265x |
+| Hub Labels (WEIGHTED_COST CH)   | 1.1187               | 81.3062             | 0            | 68.0572         | 47636.8x |
+| CH (MIXED)                      | 68.294               | 83.978              | 498.966      | N/A             | 780.321x |
+| Hub Labels (MIXED CH)           | 1.0394               | 78.5008             | 0            | 57.9925         | 51271.2x |
+
 #### BW Graph
+
+With `std::priority_queue`:
 
 | Algorithm                       | Avg. Query Time (us) | Avg. Path Time (us) | Avg. PQ Pops | Avg. Label Size | Speed-up |
 | ------------------------------- | -------------------- | ------------------- | ------------ | --------------- | -------- |
@@ -99,9 +119,33 @@ Example workflow looks like this to generate graph with `4M` points and run simp
 | CH (MIXED)                      | 146.293              | 200.213             | 937.949      | N/A             | 2151.43x |
 | Hub Labels (MIXED CH)           | 1.225                | 210.393             | 0            | 81.281          | 256929x  |
 
+With `radix_heap::pair_radix_heap`:
+
+| Algorithm                       | Avg. Query Time (us) | Avg. Path Time (us) | Avg. PQ Pops | Avg. Label Size | Speed-up |
+| ------------------------------- | -------------------- | ------------------- | ------------ | --------------- | -------- |
+| Dijkstra                        | 186009               | 42.6907             | 1.86831e+06  | N/A             | 1x       |
+| CH (IN_OUT)                     | 285.146              | 193.715             | 1606.5       | N/A             | 652.329x |
+| Hub Labels (IN_OUT CH)          | 1.3762               | 176.03              | 0            | 130.341         | 135161x  |
+| CH (EDGE_DIFFERENCE)            | 223.981              | 207.076             | 1317.86      | N/A             | 830.468x |
+| Hub Labels (EDGE_DIFFERENCE CH) | 1.1581               | 191.903             | 0            | 92.2433         | 160616x  |
+| CH (WEIGHTED_COST)              | 208.84               | 203.052             | 1208.41      | N/A             | 890.675x |
+| Hub Labels (WEIGHTED_COST CH)   | 1.1678               | 189.222             | 0            | 88.3935         | 159282x  |
+| CH (MIXED)                      | 156.216              | 179.928             | 998.075      | N/A             | 1190.71x |
+| Hub Labels (MIXED CH)           | 1.1676               | 171.592             | 0            | 83.2474         | 159309x  |
+
 #### Ocean Graph 1M
 
-TODO: Rewrite the graph implementation to use coninuous array instead of array of array
+| Algorithm                       | Avg. Query Time (us) | Avg. Path Time (us) | Avg. PQ Pops | Avg. Label Size | Speed-up |
+| ------------------------------- | -------------------- | ------------------- | ------------ | --------------- | -------- |
+| Dijkstra                        | 82232.9              | 11.3854             | 1.08239e+06  | N/A             | 1x       |
+| CH (IN_OUT)                     | 6655.7               | 118.142             | 21991.9      | N/A             | 12.3553x |
+| Hub Labels (IN_OUT CH)          | 2.9926               | 70.6643             | 0            | 529.169         | 27478.7x |
+| CH (EDGE_DIFFERENCE)            | 3774.05              | 110.039             | 14796.5      | N/A             | 21.789x  |
+| Hub Labels (EDGE_DIFFERENCE CH) | 1.776                | 70.1017             | 0            | 296.746         | 46302.3x |
+| CH (WEIGHTED_COST)              | 3488.65              | 106.802             | 13260.8      | N/A             | 23.5715x |
+| Hub Labels (WEIGHTED_COST CH)   | 1.7051               | 70.5079             | 0            | 285.777         | 48227.6x |
+| CH (MIXED)                      | 2532.62              | 97.0062             | 10486.4      | N/A             | 32.4695x |
+| Hub Labels (MIXED CH)           | 1.7307               | 70.4157             | 0            | 268.63          | 47514.2x |
 
 #### Ocean Graph 4M
 Before optimizing:
@@ -114,16 +158,15 @@ Before optimizing:
 | CH (WEIGHTED_COST)   | 75230.1              | 393.461             | 146261       | N/A             | 13.5794x |
 | CH (MIXED)           | 59532.7              | 364.091             | 125778       | N/A             | 17.16x   |
 
-DFS reordering:
-
-| Algorithm | Avg. Query Time (us) | Avg. Path Time (us) | Avg. PQ Pops | Avg. Label Size | Speed-up |
-| --------- | -------------------- | ------------------- | ------------ | --------------- | -------- |
-| Dijkstra  | 446868               | 35.32               | 5.00705e+06  | N/A             | 1x       |
-
 DFS reordering and Radix PQ:
-| Algorithm | Avg. Query Time (us) | Avg. Path Time (us) | Avg. PQ Pops | Avg. Label Size | Speed-up |
-| --------- | -------------------- | ------------------- | ------------ | --------------- | -------- |
-| Dijkstra  | 333678               | 35.3                | 5.06685e+06  | N/A             | 1x       |
+
+| Algorithm            | Avg. Query Time (us) | Avg. Path Time (us) | Avg. PQ Pops | Avg. Label Size | Speed-up |
+| -------------------- | -------------------- | ------------------- | ------------ | --------------- | -------- |
+| Dijkstra             | 414919               | 34.5654             | 5.43895e+06  | N/A             | 1x       |
+| CH (IN_OUT)          | 122751               | 296.296             | 233967       | N/A             | 3.38017x |
+| CH (EDGE_DIFFERENCE) | 60840.3              | 254.605             | 160060       | N/A             | 6.8198x  |
+| CH (WEIGHTED_COST)   | 60313.5              | 256.947             | 146432       | N/A             | 6.87937x |
+| CH (MIXED)           | 49416.6              | 258.082             | 123934       | N/A             | 8.39635x |
 
 
 ## Images

@@ -8,9 +8,9 @@
 #include <fstream>
 #include <iostream>
 #include <numeric>
-#include <queue>
 #include <sstream>
 #include <tuple>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 
@@ -34,37 +34,6 @@ std::string heuristicToString(Heuristic heuristic) {
         default:
             return "UNKNOWN";
     }
-}
-
-Graph::Graph(const std::string& path, bool ch_available, Heuristic ch_heuristic)
-    : m_ch_available(ch_available), m_is(false), m_num_threads(1) {
-    bool is_chfmi = path.size() >= 6 && path.substr(path.size() - 6) == ".chfmi";
-    if (is_chfmi && m_ch_available) {
-        readGraphFromCHFMI(path);
-    } else {
-        if (m_ch_available)
-            readGraph(path);
-        else
-            readSimpleGraph(path);
-
-        m_num_nodes = m_graph.size();
-        if (m_ch_available) {
-            createCHwithoutIS(ch_heuristic);
-            std::string output_filename_base = path;
-            size_t pos_fmi = output_filename_base.rfind(".fmi");
-            if (pos_fmi != std::string::npos) {
-                output_filename_base.replace(pos_fmi, 4, "");
-            }
-            size_t pos_chfmi = output_filename_base.rfind(".chfmi");
-            if (pos_chfmi != std::string::npos) {
-                output_filename_base.replace(pos_chfmi, 6, "");  // Remove .chfmi
-            }
-            std::string output_filename = output_filename_base + "_" + heuristicToString(ch_heuristic) + ".chfmi";
-            writeGraphToCHFMI(output_filename);
-        }
-    }
-
-    createReverseGraph();
 }
 
 Graph::Graph(const std::string& path, bool ch_available, int num_threads, Heuristic ch_heuristic)
@@ -161,7 +130,7 @@ void Graph::readGraph(const std::string& path) {
         getline(ss, s, ' ');
         int cost = std::stoi(s);
 
-        m_graph[src].push_back(Edge{target, cost});
+        m_graph[src].emplace_back(target, cost);
     }
 
     auto end = std::chrono::high_resolution_clock::now();
@@ -213,11 +182,8 @@ void Graph::readSimpleGraph(const std::string& path) {
 
     m_graph.clear();
     m_graph.resize(num_nodes);
-    m_dijkstra_edge_indices.clear();
-    m_dijkstra_edge_indices.resize(num_nodes + 1);
-    m_dijkstra_edge_indices[0] = 0;
-    m_dijkstra_edges.clear();
-    m_dijkstra_edges.reserve(num_edges);
+    m_dijkstra_graph.clear();
+    m_dijkstra_graph.resize(num_nodes);
 
     // read edge information
     for (int i = 0; i < num_edges; ++i) {
@@ -232,8 +198,7 @@ void Graph::readSimpleGraph(const std::string& path) {
         getline(ss, s, ' ');
         int cost = std::stoi(s);
 
-        m_dijkstra_edge_indices[src + 1] = i + 1;
-        m_dijkstra_edges.push_back(SimpleEdge{target, cost});
+        m_dijkstra_graph[src].emplace_back(target, cost);
     }
 
     auto end = std::chrono::high_resolution_clock::now();
@@ -290,8 +255,7 @@ void Graph::dijkstraQuery(DijkstraQueryData& data) {
             return;
         }
 
-        for (int i = m_dijkstra_edge_indices[node]; i < m_dijkstra_edge_indices[node + 1]; ++i) {
-            const SimpleEdge& edge = m_dijkstra_edges[i];
+        for (const auto& edge : m_dijkstra_graph[node]) {
             int new_distance = dist + edge.m_cost;
             if (new_distance < data.m_distances[edge.m_target]) {
                 pq.emplace(new_distance, edge.m_target);
@@ -328,17 +292,15 @@ void Graph::contractionHierarchyQuery(QueryData& data) {
         data.reset();
     }
 
-    std::priority_queue<std::pair<int, int>, std::vector<std::pair<int, int>>, std::greater<std::pair<int, int>>>
-        fwd_pq;
-    std::priority_queue<std::pair<int, int>, std::vector<std::pair<int, int>>, std::greater<std::pair<int, int>>>
-        bwd_pq;
+    radix_heap::pair_radix_heap<int, int> fwd_pq;
+    radix_heap::pair_radix_heap<int, int> bwd_pq;
 
     data.m_distances_fwd[data.m_start] = 0;
     data.m_distances_bwd[data.m_end] = 0;
 
     // first corresponds to distance and second is node index
-    fwd_pq.push(std::make_pair(0, data.m_start));
-    bwd_pq.push(std::make_pair(0, data.m_end));
+    fwd_pq.emplace(0, data.m_start);
+    bwd_pq.emplace(0, data.m_end);
 
     data.m_fwd_prev_edge[data.m_start] = std::make_pair(data.m_start, -1);
     data.m_bwd_prev_edge[data.m_end] = std::make_pair(data.m_end, -1);
@@ -349,38 +311,34 @@ void Graph::contractionHierarchyQuery(QueryData& data) {
     data.m_reset_nodes_fwd.push_back(data.m_start);
     data.m_reset_nodes_bwd.push_back(data.m_end);
 
-    std::pair<int, int> fwd_node;
-    std::pair<int, int> bwd_node;
-
     // bidirectional dijkstra
     while (!fwd_pq.empty() || !bwd_pq.empty()) {
         while (!fwd_pq.empty()) {
-            fwd_node = fwd_pq.top();
+            int fwd_dist = fwd_pq.top_key();
+            int fwd_node_id = fwd_pq.top_value();
             fwd_pq.pop();
             data.num_pq_pops++;
 
-            if (data.m_visited_fwd[fwd_node.second] && fwd_node.first > data.m_distances_fwd[fwd_node.second]) continue;
-            if (fwd_node.first > data.m_distance) break;
+            if (data.m_visited_fwd[fwd_node_id] && fwd_dist > data.m_distances_fwd[fwd_node_id]) continue;
+            if (fwd_dist > data.m_distance) break;
 
             // forward step
-            for (int i = 0; i < m_graph[fwd_node.second].size(); ++i) {
-                Edge& e = m_graph[fwd_node.second][i];
+            for (int i = 0; i < m_graph[fwd_node_id].size(); ++i) {
+                Edge& e = m_graph[fwd_node_id][i];
 
-                if (!data.m_visited_fwd[e.m_target] || data.m_distances_fwd[e.m_target] > fwd_node.first + e.m_cost) {
+                if (!data.m_visited_fwd[e.m_target] || data.m_distances_fwd[e.m_target] > fwd_dist + e.m_cost) {
                     if (!data.m_visited_fwd[e.m_target]) data.m_reset_nodes_fwd.push_back(e.m_target);
 
-                    data.m_distances_fwd[e.m_target] = fwd_node.first + e.m_cost;
-                    fwd_pq.push(std::make_pair(data.m_distances_fwd[e.m_target], e.m_target));
+                    data.m_distances_fwd[e.m_target] = fwd_dist + e.m_cost;
+                    fwd_pq.emplace(data.m_distances_fwd[e.m_target], e.m_target);
                     data.m_visited_fwd[e.m_target] = true;
 
-                    data.m_fwd_prev_edge[e.m_target] = std::make_pair(fwd_node.second, i);
+                    data.m_fwd_prev_edge[e.m_target] = std::make_pair(fwd_node_id, i);
                 }
 
                 if (data.m_visited_bwd[e.m_target] &&
-                    data.m_distances_fwd[fwd_node.second] + e.m_cost + data.m_distances_bwd[e.m_target] <
-                        data.m_distance) {
-                    data.m_distance =
-                        data.m_distances_fwd[fwd_node.second] + e.m_cost + data.m_distances_bwd[e.m_target];
+                    data.m_distances_fwd[fwd_node_id] + e.m_cost + data.m_distances_bwd[e.m_target] < data.m_distance) {
+                    data.m_distance = data.m_distances_fwd[fwd_node_id] + e.m_cost + data.m_distances_bwd[e.m_target];
                     data.m_meeting_node = e.m_target;
                 }
             }
@@ -389,31 +347,30 @@ void Graph::contractionHierarchyQuery(QueryData& data) {
         }
 
         while (!bwd_pq.empty()) {
-            bwd_node = bwd_pq.top();
+            int bwd_dist = bwd_pq.top_key();
+            int bwd_node_id = bwd_pq.top_value();
             bwd_pq.pop();
             data.num_pq_pops++;
 
-            if (data.m_visited_bwd[bwd_node.second] && bwd_node.first > data.m_distances_bwd[bwd_node.second]) continue;
-            if (bwd_node.first > data.m_distance) break;
+            if (data.m_visited_bwd[bwd_node_id] && bwd_dist > data.m_distances_bwd[bwd_node_id]) continue;
+            if (bwd_dist > data.m_distance) break;
 
             // backward step
-            for (int i = 0; i < m_reverse_graph[bwd_node.second].size(); ++i) {
-                Edge& e = m_reverse_graph[bwd_node.second][i];
-                if (!data.m_visited_bwd[e.m_target] || data.m_distances_bwd[e.m_target] > bwd_node.first + e.m_cost) {
+            for (int i = 0; i < m_reverse_graph[bwd_node_id].size(); ++i) {
+                Edge& e = m_reverse_graph[bwd_node_id][i];
+                if (!data.m_visited_bwd[e.m_target] || data.m_distances_bwd[e.m_target] > bwd_dist + e.m_cost) {
                     if (!data.m_visited_bwd[e.m_target]) data.m_reset_nodes_bwd.push_back(e.m_target);
 
-                    data.m_distances_bwd[e.m_target] = bwd_node.first + e.m_cost;
-                    bwd_pq.push(std::make_pair(data.m_distances_bwd[e.m_target], e.m_target));
+                    data.m_distances_bwd[e.m_target] = bwd_dist + e.m_cost;
+                    bwd_pq.emplace(data.m_distances_bwd[e.m_target], e.m_target);
                     data.m_visited_bwd[e.m_target] = true;
 
-                    data.m_bwd_prev_edge[e.m_target] = std::make_pair(bwd_node.second, i);
+                    data.m_bwd_prev_edge[e.m_target] = std::make_pair(bwd_node_id, i);
                 }
 
                 if (data.m_visited_fwd[e.m_target] &&
-                    data.m_distances_bwd[bwd_node.second] + e.m_cost + data.m_distances_fwd[e.m_target] <
-                        data.m_distance) {
-                    data.m_distance =
-                        data.m_distances_bwd[bwd_node.second] + e.m_cost + data.m_distances_fwd[e.m_target];
+                    data.m_distances_bwd[bwd_node_id] + e.m_cost + data.m_distances_fwd[e.m_target] < data.m_distance) {
+                    data.m_distance = data.m_distances_bwd[bwd_node_id] + e.m_cost + data.m_distances_fwd[e.m_target];
                     data.m_meeting_node = e.m_target;
                 }
             }
@@ -529,150 +486,6 @@ void Graph::unpackEdge(const std::tuple<int, int, bool>& edge_index, std::vector
     }
 }
 
-void Graph::createHubLabelsWithoutIS() {
-    std::cout << "Started creating hub labels." << "\n";
-    auto begin = std::chrono::high_resolution_clock::now();
-
-    if (m_graph.empty() || m_reverse_graph.empty()) {
-        std::cout << "Can't create hub labels, because graph or reverse graph is empty" << "\n";
-        return;
-    }
-
-    m_fwd_indices.clear();
-    m_fwd_indices.resize(m_num_nodes + 1, 0);
-    m_bwd_indices.clear();
-    m_bwd_indices.resize(m_num_nodes + 1, 0);
-
-    m_fwd_hub_labels.clear();
-    m_bwd_hub_labels.clear();
-
-    // sort the levels, but don't change the original vector
-    m_level_indices_sorted.clear();
-    m_level_indices_sorted.resize(m_num_nodes);
-    std::iota(m_level_indices_sorted.begin(), m_level_indices_sorted.end(), 0);
-    std::sort(m_level_indices_sorted.begin(), m_level_indices_sorted.end(),
-              [&](int i, int j) { return m_node_level[i] > m_node_level[j]; });
-
-    m_node_indices.clear();
-    m_node_indices.resize(m_num_nodes);
-    // save for each node its corresponding index
-    for (int i = 0; i < m_num_nodes; ++i) {
-        m_node_indices[m_level_indices_sorted[i]] = i;
-    }
-
-    std::vector<std::tuple<int, int, int, int>> fwd_labels;
-    std::vector<std::tuple<int, int, int, int>> bwd_labels;
-
-    for (int i = 0; i < m_num_nodes; ++i) {
-        int node = m_level_indices_sorted[i];
-
-        if (i == 0) {
-            m_fwd_hub_labels.push_back(std::make_tuple(node, 0, -1, -1));
-            m_bwd_hub_labels.push_back(std::make_tuple(node, 0, -1, -1));
-            m_fwd_indices[1] = 1;
-            m_bwd_indices[1] = 1;
-            continue;
-        }
-
-        fwd_labels.clear();
-        bwd_labels.clear();
-
-        fwd_labels.push_back(std::make_tuple(node, 0, -1, -1));
-        bwd_labels.push_back(std::make_tuple(node, 0, -1, -1));
-
-        // fwd labels
-        for (int k = 0; k < m_graph[node].size(); ++k) {
-            Edge& e = m_graph[node][k];
-            // TODO: this cant happen because of pruned graph
-            if (m_node_level[node] >= m_node_level[e.m_target]) continue;
-
-            for (uint32_t j = m_fwd_indices[m_node_indices[e.m_target]];
-                 j < m_fwd_indices[m_node_indices[e.m_target] + 1]; j++) {
-                fwd_labels.push_back(std::make_tuple(std::get<0>(m_fwd_hub_labels[j]),
-                                                     std::get<1>(m_fwd_hub_labels[j]) + e.m_cost, k, j));
-            }
-        }
-        // remove duplicates
-        std::sort(fwd_labels.begin(), fwd_labels.end(),
-                  [](auto& left, auto& right) { return std::get<0>(left) < std::get<0>(right); });
-
-        for (auto iter = fwd_labels.begin(); iter != fwd_labels.end();) {
-            auto iter_2 = fwd_labels.end() - 1;
-            if (std::distance(iter, iter_2) != 0 && std::get<0>(*iter) == std::get<0>(*(iter + 1))) {
-                if (std::get<1>(*iter) >= std::get<1>(*(iter + 1))) {
-                    iter = fwd_labels.erase(iter);
-                } else {
-                    iter = fwd_labels.erase(iter + 1);
-                    --iter;
-                }
-            } else {
-                ++iter;
-            }
-        }
-
-        for (auto iter = fwd_labels.begin(); iter != fwd_labels.end();) {
-            int best_dist = std::numeric_limits<int>::max();
-            if (std::get<0>(*iter) != node) best_dist = simplifiedHubLabelQuery(fwd_labels, std::get<0>(*iter));
-            if (best_dist < std::get<1>(*iter))
-                iter = fwd_labels.erase(iter);
-            else
-                ++iter;
-        }
-
-        // bwd labels
-        for (int k = 0; k < m_reverse_graph[node].size(); ++k) {
-            Edge& e = m_reverse_graph[node][k];
-            // TODO: this cant happen because of pruned graph
-            if (m_node_level[node] >= m_node_level[e.m_target]) continue;
-
-            for (uint32_t j = m_bwd_indices[m_node_indices[e.m_target]];
-                 j < m_bwd_indices[m_node_indices[e.m_target] + 1]; j++) {
-                bwd_labels.push_back(std::make_tuple(std::get<0>(m_bwd_hub_labels[j]),
-                                                     std::get<1>(m_bwd_hub_labels[j]) + e.m_cost, k, j));
-            }
-        }
-        // remove duplicates
-        std::sort(bwd_labels.begin(), bwd_labels.end(),
-                  [](auto& left, auto& right) { return std::get<0>(left) < std::get<0>(right); });
-
-        for (auto iter = bwd_labels.begin(); iter != bwd_labels.end();) {
-            auto iter_2 = bwd_labels.end() - 1;
-            if (std::distance(iter, iter_2) != 0 && std::get<0>(*iter) == std::get<0>(*(iter + 1))) {
-                if (std::get<1>(*iter) >= std::get<1>(*(iter + 1))) {
-                    iter = bwd_labels.erase(iter);
-                } else {
-                    iter = bwd_labels.erase(iter + 1);
-                    --iter;
-                }
-            } else {
-                ++iter;
-            }
-        }
-        for (auto iter = bwd_labels.begin(); iter != bwd_labels.end();) {
-            int best_dist = std::numeric_limits<int>::max();
-            if (std::get<0>(*iter) != node) best_dist = simplifiedHubLabelQuery(std::get<0>(*iter), bwd_labels);
-            if (best_dist < std::get<1>(*iter))
-                iter = bwd_labels.erase(iter);
-            else
-                ++iter;
-        }
-        // update hub label data
-        m_fwd_indices[i + 1] = m_fwd_indices[i] + static_cast<uint32_t>(fwd_labels.size());
-        m_bwd_indices[i + 1] = m_bwd_indices[i] + static_cast<uint32_t>(bwd_labels.size());
-
-        for (auto label : fwd_labels) {
-            m_fwd_hub_labels.push_back(label);
-        }
-        for (auto label : bwd_labels) {
-            m_bwd_hub_labels.push_back(label);
-        }
-    }
-
-    auto end = std::chrono::high_resolution_clock::now();
-    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - begin);
-    std::cout << "Finished creating hub labels. Took " << elapsed.count() << " milliseconds " << "\n";
-}
-
 void Graph::createHubLabelsWithIS() {
     std::cout << "Started creating hub labels." << "\n";
     auto begin = std::chrono::high_resolution_clock::now();
@@ -690,27 +503,40 @@ void Graph::createHubLabelsWithIS() {
     m_fwd_hub_labels.clear();
     m_bwd_hub_labels.clear();
 
-    // sort the levels, but don't change the original vector
-    std::unordered_set<int> different_levels;
+    // Reserve space to avoid frequent reallocations during construction
+    // Estimate based on typical hub label density
+    const size_t estimated_total_labels = static_cast<size_t>(m_num_nodes) * 300;  // Rough estimate
+    m_fwd_hub_labels.reserve(estimated_total_labels);
+    m_bwd_hub_labels.reserve(estimated_total_labels);
+
+    // Optimized level sorting using a map for O(log n) lookup instead of linear search
+    std::unordered_map<int, std::vector<int>> level_buckets;
     for (int i = 0; i < m_num_nodes; i++) {
-        different_levels.emplace(m_node_level[i]);
+        level_buckets[m_node_level[i]].push_back(i);
     }
+
+    // Extract sorted levels
     std::vector<int> different_levels_vec;
-    different_levels_vec.insert(different_levels_vec.end(), different_levels.begin(), different_levels.end());
-    std::sort(different_levels_vec.begin(), different_levels_vec.end(),
-              [](int& left, int& right) { return left > right; });
-    std::vector<std::vector<int>> level_buckets(different_levels_vec.size());
-    for (int i = 0; i < m_num_nodes; ++i) {
-        auto iter = find(different_levels_vec.begin(), different_levels_vec.end(), m_node_level[i]);
-        level_buckets[iter - different_levels_vec.begin()].push_back(i);
+    different_levels_vec.reserve(level_buckets.size());
+    for (const auto& pair : level_buckets) {
+        different_levels_vec.push_back(pair.first);
+    }
+    std::sort(different_levels_vec.begin(), different_levels_vec.end(), std::greater<int>());
+
+    // Convert to vector of vectors for compatibility
+    std::vector<std::vector<int>> level_buckets_vec;
+    level_buckets_vec.reserve(different_levels_vec.size());
+    for (int level : different_levels_vec) {
+        level_buckets_vec.push_back(std::move(level_buckets[level]));
     }
 
     // sort the levels, but don't change the original vector
     m_level_indices_sorted.clear();
+    m_level_indices_sorted.reserve(m_num_nodes);  // Reserve space for all nodes
 
     for (int i = 0; i < different_levels_vec.size(); ++i) {
-        for (int j = 0; j < level_buckets[i].size(); ++j) {
-            m_level_indices_sorted.push_back(level_buckets[i][j]);
+        for (int j = 0; j < level_buckets_vec[i].size(); ++j) {
+            m_level_indices_sorted.push_back(level_buckets_vec[i][j]);
         }
     }
 
@@ -723,104 +549,139 @@ void Graph::createHubLabelsWithIS() {
 
     uint32_t num_calculated = 0;
 
+    const int MAX_THREADS = 16;
+
+    // reserve space for fwd_labels/bwd_labels to avoid alocations for each node
+    std::vector<std::vector<std::tuple<uint32_t, uint32_t, uint16_t, uint16_t>>> fwd_labels_vec(MAX_THREADS);
+    std::vector<std::vector<std::tuple<uint32_t, uint32_t, uint16_t, uint16_t>>> bwd_labels_vec(MAX_THREADS);
+
+    for (int i = 0; i < MAX_THREADS; ++i) {
+        fwd_labels_vec[i].reserve(300);
+        bwd_labels_vec[i].reserve(300);
+    }
+
     // at the beginning set threads to 1
     omp_set_num_threads(1);
 
     for (int i = 0; i < different_levels_vec.size(); ++i) {
         if (i == 0) {
-            int node = level_buckets[i][0];
-            m_fwd_hub_labels.push_back(std::make_tuple(node, 0, -1, -1));
-            m_bwd_hub_labels.push_back(std::make_tuple(node, 0, -1, -1));
+            int node = level_buckets_vec[i][0];
+            m_fwd_hub_labels.emplace_back(static_cast<uint32_t>(node), 0U, static_cast<uint16_t>(-1),
+                                          static_cast<uint32_t>(-1));
+            m_bwd_hub_labels.emplace_back(static_cast<uint32_t>(node), 0U, static_cast<uint16_t>(-1),
+                                          static_cast<uint32_t>(-1));
             m_fwd_indices[1] = 1;
             m_bwd_indices[1] = 1;
             continue;
         }
 
 #pragma omp parallel for ordered schedule(static, 1)
-        for (int j = 0; j < level_buckets[i].size(); ++j) {
-            int node = level_buckets[i][j];
+        for (int j = 0; j < static_cast<int>(level_buckets_vec[i].size()); ++j) {
+            int node = level_buckets_vec[i][j];
 
-            std::vector<std::tuple<int, int, int, int>> fwd_labels;
-            std::vector<std::tuple<int, int, int, int>> bwd_labels;
+            auto& fwd_labels = fwd_labels_vec[omp_get_thread_num()];
+            auto& bwd_labels = bwd_labels_vec[omp_get_thread_num()];
+            fwd_labels.clear();
+            bwd_labels.clear();
 
-            fwd_labels.push_back(std::make_tuple(node, 0, -1, -1));
-            bwd_labels.push_back(std::make_tuple(node, 0, -1, -1));
+            fwd_labels.emplace_back(static_cast<uint32_t>(node), 0U, static_cast<uint16_t>(-1),
+                                    static_cast<uint32_t>(-1));
+            bwd_labels.emplace_back(static_cast<uint32_t>(node), 0U, static_cast<uint16_t>(-1),
+                                    static_cast<uint32_t>(-1));
 
-            // fwd labels
-            for (int k = 0; k < m_graph[node].size(); ++k) {
-                Edge& e = m_graph[node][k];
-                // TODO: this cant happen because of pruned graph
-                if (m_node_level[node] >= m_node_level[e.m_target]) continue;
+            // fwd labels - cache optimization to reduce repeated lookups
+            const int node_level = m_node_level[node];
+            const int graph_size = static_cast<int>(m_graph[node].size());
 
-                for (uint32_t j = m_fwd_indices[m_node_indices[e.m_target]];
-                     j < m_fwd_indices[m_node_indices[e.m_target] + 1]; j++) {
-                    fwd_labels.push_back(std::make_tuple(std::get<0>(m_fwd_hub_labels[j]),
-                                                         std::get<1>(m_fwd_hub_labels[j]) + e.m_cost, k, j));
+            for (int k = 0; k < graph_size; ++k) {
+                const Edge& edge = m_graph[node][k];
+
+                // Cache target node index to avoid repeated lookup
+                const uint32_t target_node_idx = m_node_indices[edge.m_target];
+                for (uint64_t j = m_fwd_indices[target_node_idx]; j < m_fwd_indices[target_node_idx + 1]; j++) {
+                    fwd_labels.emplace_back(std::get<0>(m_fwd_hub_labels[j]),
+                                            std::get<1>(m_fwd_hub_labels[j]) + static_cast<uint32_t>(edge.m_cost),
+                                            static_cast<uint16_t>(k),
+                                            static_cast<uint16_t>(j - m_fwd_indices[target_node_idx]));
                 }
             }
 
-            // remove duplicates
-            std::sort(fwd_labels.begin(), fwd_labels.end(),
-                      [](auto& left, auto& right) { return std::get<0>(left) < std::get<0>(right); });
+            // remove duplicates - optimized version
+            std::sort(fwd_labels.begin(), fwd_labels.end(), [](const auto& left, const auto& right) {
+                if (std::get<0>(left) != std::get<0>(right)) return std::get<0>(left) < std::get<0>(right);
+                return std::get<1>(left) < std::get<1>(right);
+            });
 
-            for (auto iter = fwd_labels.begin(); iter != fwd_labels.end();) {
-                auto iter_2 = fwd_labels.end() - 1;
-                if (std::distance(iter, iter_2) != 0 && std::get<0>(*iter) == std::get<0>(*(iter + 1))) {
-                    if (std::get<1>(*iter) >= std::get<1>(*(iter + 1))) {
-                        iter = fwd_labels.erase(iter);
-                    } else {
-                        iter = fwd_labels.erase(iter + 1);
-                        --iter;
+            // Remove duplicates by keeping only the best (smallest distance) for each node
+            auto write_it = fwd_labels.begin();
+            for (auto read_it = fwd_labels.begin(); read_it != fwd_labels.end();) {
+                *write_it = std::move(*read_it);
+                auto next_it = read_it + 1;
+                // Skip all duplicates with worse distances
+                while (next_it != fwd_labels.end() && std::get<0>(*next_it) == std::get<0>(*write_it)) {
+                    if (std::get<1>(*next_it) < std::get<1>(*write_it)) {
+                        *write_it = std::move(*next_it);
                     }
-                } else {
-                    ++iter;
+                    ++next_it;
                 }
+                read_it = next_it;
+                ++write_it;
             }
+            fwd_labels.erase(write_it, fwd_labels.end());
 
             for (auto iter = fwd_labels.begin(); iter != fwd_labels.end();) {
                 int best_dist = std::numeric_limits<int>::max();
-                if (std::get<0>(*iter) != node) best_dist = simplifiedHubLabelQuery(fwd_labels, std::get<0>(*iter));
+                if (static_cast<uint32_t>(node) != std::get<0>(*iter))
+                    best_dist = simplifiedHubLabelQuery(fwd_labels, static_cast<int>(std::get<0>(*iter)));
                 if (best_dist < std::get<1>(*iter))
                     iter = fwd_labels.erase(iter);
                 else
                     ++iter;
             }
 
-            // bwd labels
-            for (int k = 0; k < m_reverse_graph[node].size(); ++k) {
-                Edge& e = m_reverse_graph[node][k];
+            // bwd labels - cache optimization to reduce repeated lookups
+            const int reverse_graph_size = static_cast<int>(m_reverse_graph[node].size());
 
-                // TODO: this cant happen because of pruned graph
-                if (m_node_level[node] >= m_node_level[e.m_target]) continue;
+            for (int k = 0; k < reverse_graph_size; ++k) {
+                const Edge& edge = m_reverse_graph[node][k];
 
-                for (uint32_t j = m_bwd_indices[m_node_indices[e.m_target]];
-                     j < m_bwd_indices[m_node_indices[e.m_target] + 1]; j++) {
-                    bwd_labels.push_back(std::make_tuple(std::get<0>(m_bwd_hub_labels[j]),
-                                                         std::get<1>(m_bwd_hub_labels[j]) + e.m_cost, k, j));
+                // Cache target node index to avoid repeated lookup
+                const uint32_t target_node_idx = m_node_indices[edge.m_target];
+                for (uint64_t j = m_bwd_indices[target_node_idx]; j < m_bwd_indices[target_node_idx + 1]; j++) {
+                    bwd_labels.emplace_back(std::get<0>(m_bwd_hub_labels[j]),
+                                            std::get<1>(m_bwd_hub_labels[j]) + static_cast<uint32_t>(edge.m_cost),
+                                            static_cast<uint16_t>(k),
+                                            static_cast<uint16_t>(j - m_bwd_indices[target_node_idx]));
                 }
             }
 
-            // remove duplicates
-            std::sort(bwd_labels.begin(), bwd_labels.end(),
-                      [](auto& left, auto& right) { return std::get<0>(left) < std::get<0>(right); });
+            // remove duplicates - optimized version
+            std::sort(bwd_labels.begin(), bwd_labels.end(), [](const auto& left, const auto& right) {
+                if (std::get<0>(left) != std::get<0>(right)) return std::get<0>(left) < std::get<0>(right);
+                return std::get<1>(left) < std::get<1>(right);
+            });
 
-            for (auto iter = bwd_labels.begin(); iter != bwd_labels.end();) {
-                auto iter_2 = bwd_labels.end() - 1;
-                if (std::distance(iter, iter_2) != 0 && std::get<0>(*iter) == std::get<0>(*(iter + 1))) {
-                    if (std::get<1>(*iter) >= std::get<1>(*(iter + 1))) {
-                        iter = bwd_labels.erase(iter);
-                    } else {
-                        iter = bwd_labels.erase(iter + 1);
-                        --iter;
+            // Remove duplicates by keeping only the best (smallest distance) for each node
+            write_it = bwd_labels.begin();
+            for (auto read_it = bwd_labels.begin(); read_it != bwd_labels.end();) {
+                *write_it = std::move(*read_it);
+                auto next_it = read_it + 1;
+                // Skip all duplicates with worse distances
+                while (next_it != bwd_labels.end() && std::get<0>(*next_it) == std::get<0>(*write_it)) {
+                    if (std::get<1>(*next_it) < std::get<1>(*write_it)) {
+                        *write_it = std::move(*next_it);
                     }
-                } else {
-                    ++iter;
+                    ++next_it;
                 }
+                read_it = next_it;
+                ++write_it;
             }
+            bwd_labels.erase(write_it, bwd_labels.end());
 
             for (auto iter = bwd_labels.begin(); iter != bwd_labels.end();) {
                 int best_dist = std::numeric_limits<int>::max();
-                if (std::get<0>(*iter) != node) best_dist = simplifiedHubLabelQuery(std::get<0>(*iter), bwd_labels);
+                if (static_cast<uint32_t>(node) != std::get<0>(*iter))
+                    best_dist = simplifiedHubLabelQuery(static_cast<int>(std::get<0>(*iter)), bwd_labels);
                 if (best_dist < std::get<1>(*iter))
                     iter = bwd_labels.erase(iter);
                 else
@@ -831,22 +692,25 @@ void Graph::createHubLabelsWithIS() {
             {
                 int fwd_node_index = m_node_indices[node];
                 m_fwd_indices[fwd_node_index + 1] =
-                    m_fwd_indices[fwd_node_index] + static_cast<uint32_t>(fwd_labels.size());
+                    m_fwd_indices[fwd_node_index] + static_cast<uint64_t>(fwd_labels.size());
                 m_bwd_indices[fwd_node_index + 1] =
-                    m_bwd_indices[fwd_node_index] + static_cast<uint32_t>(bwd_labels.size());
+                    m_bwd_indices[fwd_node_index] + static_cast<uint64_t>(bwd_labels.size());
 
-                for (auto label : fwd_labels) {
-                    m_fwd_hub_labels.push_back(label);
+                for (const auto& label : fwd_labels) {
+                    m_fwd_hub_labels.emplace_back(label);
                 }
-                for (auto label : bwd_labels) {
-                    m_bwd_hub_labels.push_back(label);
+                for (const auto& label : bwd_labels) {
+                    m_bwd_hub_labels.emplace_back(label);
                 }
             }
         }
-        num_calculated += static_cast<uint32_t>(level_buckets[i].size());
+        num_calculated += static_cast<uint32_t>(level_buckets_vec[i].size());
         std::cout << "Finished Hub Labels for " << num_calculated << " num of nodes." << "\n";
 
-        if (num_calculated > 0.8 * m_num_nodes) omp_set_num_threads(16);
+        const double PARALLEL_THRESHOLD = 0.05;
+        if (num_calculated > PARALLEL_THRESHOLD * m_num_nodes) {
+            omp_set_num_threads(MAX_THREADS);
+        }
     }
 
     auto end = std::chrono::high_resolution_clock::now();
@@ -854,7 +718,7 @@ void Graph::createHubLabelsWithIS() {
     std::cout << "Finished creating hub labels. Took " << elapsed.count() << " milliseconds " << "\n";
 }
 
-std::pair<uint32_t, uint32_t> Graph::hubLabelQuery(QueryData& data) {
+std::pair<uint64_t, uint64_t> Graph::hubLabelQuery(QueryData& data) {
     if (data.m_start < 0 || data.m_end < 0) {
         std::cout << "Invalid start or end nodes!" << "\n";
         return std::make_pair(-1, -1);
@@ -871,21 +735,21 @@ std::pair<uint32_t, uint32_t> Graph::hubLabelQuery(QueryData& data) {
     data.m_distance = std::numeric_limits<int>::max();
     data.m_meeting_node = -1;
 
-    uint32_t fwd_node_index = m_fwd_indices[m_node_indices[data.m_start]];
-    uint32_t fwd_next_index = m_fwd_indices[m_node_indices[data.m_start] + 1];
+    uint64_t fwd_node_index = m_fwd_indices[m_node_indices[data.m_start]];
+    uint64_t fwd_next_index = m_fwd_indices[m_node_indices[data.m_start] + 1];
 
-    uint32_t bwd_node_index = m_bwd_indices[m_node_indices[data.m_end]];
-    uint32_t bwd_next_index = m_bwd_indices[m_node_indices[data.m_end] + 1];
+    uint64_t bwd_node_index = m_bwd_indices[m_node_indices[data.m_end]];
+    uint64_t bwd_next_index = m_bwd_indices[m_node_indices[data.m_end] + 1];
 
-    uint32_t best_fwd_index = fwd_node_index;
-    uint32_t best_bwd_index = bwd_node_index;
+    uint64_t best_fwd_index = fwd_node_index;
+    uint64_t best_bwd_index = bwd_node_index;
     while (fwd_node_index < fwd_next_index && bwd_node_index < bwd_next_index) {
         if (std::get<0>(m_fwd_hub_labels[fwd_node_index]) == std::get<0>(m_bwd_hub_labels[bwd_node_index])) {
             if (std::get<1>(m_fwd_hub_labels[fwd_node_index]) + std::get<1>(m_bwd_hub_labels[bwd_node_index]) <
                 data.m_distance) {
-                data.m_meeting_node = std::get<0>(m_fwd_hub_labels[fwd_node_index]);
-                data.m_distance =
-                    std::get<1>(m_fwd_hub_labels[fwd_node_index]) + std::get<1>(m_bwd_hub_labels[bwd_node_index]);
+                data.m_meeting_node = static_cast<int>(std::get<0>(m_fwd_hub_labels[fwd_node_index]));
+                data.m_distance = static_cast<int>(std::get<1>(m_fwd_hub_labels[fwd_node_index]) +
+                                                   std::get<1>(m_bwd_hub_labels[bwd_node_index]));
 
                 best_fwd_index = fwd_node_index;
                 best_bwd_index = bwd_node_index;
@@ -927,7 +791,8 @@ void Graph::hubLabelExtractPath(QueryData& data, std::pair<int, int> hub_indices
         Edge e = m_graph[cur_node][std::get<2>(cur_fwd_label)];
         fwd_edges.push_back(std::make_tuple(cur_node, std::get<2>(cur_fwd_label), true));
         cur_node = e.m_target;
-        cur_fwd_label = m_fwd_hub_labels[std::get<3>(cur_fwd_label)];
+        // Calculate absolute index: base index for target node + offset stored in tuple
+        cur_fwd_label = m_fwd_hub_labels[m_fwd_indices[m_node_indices[cur_node]] + std::get<3>(cur_fwd_label)];
     }
 
     std::cout << "Debug before unpacking edges fwd" << "\n";
@@ -954,7 +819,8 @@ void Graph::hubLabelExtractPath(QueryData& data, std::pair<int, int> hub_indices
         Edge e = m_reverse_graph[cur_node][std::get<2>(cur_bwd_label)];
         bwd_edges.push_back(std::make_tuple(cur_node, std::get<2>(cur_bwd_label), false));
         cur_node = e.m_target;
-        cur_bwd_label = m_bwd_hub_labels[std::get<3>(cur_bwd_label)];
+        // Calculate absolute index: base index for target node + offset stored in tuple
+        cur_bwd_label = m_bwd_hub_labels[m_bwd_indices[m_node_indices[cur_node]] + std::get<3>(cur_bwd_label)];
         std::cout << "Cur Node BWD: " << cur_node << "\n";
     }
 
@@ -1092,7 +958,7 @@ void Graph::createReverseGraphCH() {
                 std::tuple<int, int, bool> child_1;
                 for (int k = 0; k < m_reverse_graph[e.m_contraction_node].size(); ++k) {
                     if (m_reverse_graph[e.m_contraction_node][k].m_target == i) {
-                        child_1 = std::make_tuple(e.m_contraction_node, k, false);
+                        child_1 = std::make_tuple(e.m_contraction_node, static_cast<uint16_t>(k), false);
                         break;
                     }
                 }
@@ -1100,7 +966,7 @@ void Graph::createReverseGraphCH() {
                 std::tuple<int, int, bool> child_2;
                 for (int k = 0; k < m_graph[e.m_contraction_node].size(); ++k) {
                     if (m_graph[e.m_contraction_node][k].m_target == e.m_target) {
-                        child_2 = std::make_tuple(e.m_contraction_node, k, true);
+                        child_2 = std::make_tuple(e.m_contraction_node, static_cast<uint16_t>(k), true);
                         break;
                     }
                 }
@@ -1116,7 +982,7 @@ void Graph::createReverseGraphCH() {
                 std::tuple<int, int, bool> child_1;
                 for (int k = 0; k < m_graph[e.m_contraction_node].size(); ++k) {
                     if (m_graph[e.m_contraction_node][k].m_target == i) {
-                        child_1 = std::make_tuple(e.m_contraction_node, k, true);
+                        child_1 = std::make_tuple(e.m_contraction_node, static_cast<uint16_t>(k), true);
                         break;
                     }
                 }
@@ -1124,7 +990,7 @@ void Graph::createReverseGraphCH() {
                 std::tuple<int, int, bool> child_2;
                 for (int k = 0; k < m_reverse_graph[e.m_contraction_node].size(); ++k) {
                     if (m_reverse_graph[e.m_contraction_node][k].m_target == e.m_target) {
-                        child_2 = std::make_tuple(e.m_contraction_node, k, false);
+                        child_2 = std::make_tuple(e.m_contraction_node, static_cast<uint16_t>(k), false);
                         break;
                     }
                 }
@@ -1136,122 +1002,6 @@ void Graph::createReverseGraphCH() {
 
     m_graph_contr.clear();
     m_reverse_graph_contr.clear();
-}
-
-void Graph::createCHwithoutIS(Heuristic heuristic) {
-    std::cout << "Started creating CH." << "\n";
-
-    auto begin = std::chrono::high_resolution_clock::now();
-
-    if (m_graph.empty()) {
-        std::cout << "Can't create CH, because graph is empty." << "\n";
-        return;
-    }
-    m_node_level.clear();
-    m_node_level.resize(m_num_nodes);
-
-    createContractionGraphs();
-
-    std::vector<bool> contracted(m_num_nodes, false);
-    int num_contracted = 0;
-
-    m_contr_data.resize(1);
-
-    m_contr_data[0] = ContractionData(m_num_nodes);
-    m_contr_data[0].m_num_contracted_neighbors.clear();
-    m_contr_data[0].m_num_contracted_neighbors.resize(m_num_nodes, 0);
-
-    // initialize importance for all nodes
-    std::priority_queue<std::pair<int, int>, std::vector<std::pair<int, int>>, std::greater<std::pair<int, int>>>
-        importance_pq;
-    for (int i = 0; i < m_num_nodes; ++i) {
-        int importance = 0;
-        switch (heuristic) {
-            case Heuristic::IN_OUT:
-                importance = inOutProductHeuristic(contracted, i);
-                break;
-            case Heuristic::EDGE_DIFFERENCE:
-                importance = edgeDifferenceHeuristic(contracted, i);
-                break;
-            case Heuristic::WEIGHTED_COST:
-                importance = weightedCostHeuristic(contracted, i);
-                break;
-            case Heuristic::MIXED:
-                importance = mixedHeuristic(contracted, i, num_contracted);
-                break;
-            default:
-                break;
-        }
-        importance_pq.emplace(std::make_pair(importance, i));
-    }
-
-    while (num_contracted != m_num_nodes) {
-        auto contracted_node = importance_pq.top();
-        importance_pq.pop();
-
-        int new_importance = 0;
-        switch (heuristic) {
-            case Heuristic::IN_OUT:
-                new_importance = inOutProductHeuristic(contracted, contracted_node.second);
-                break;
-            case Heuristic::EDGE_DIFFERENCE:
-                new_importance = edgeDifferenceHeuristic(contracted, contracted_node.second);
-                break;
-            case Heuristic::WEIGHTED_COST:
-                new_importance = weightedCostHeuristic(contracted, contracted_node.second);
-                break;
-            case Heuristic::MIXED:
-                new_importance = mixedHeuristic(contracted, contracted_node.second, num_contracted);
-                break;
-            default:
-                break;
-        }
-
-        while (new_importance > importance_pq.top().first) {
-            importance_pq.emplace(std::make_pair(new_importance, contracted_node.second));
-            contracted_node = importance_pq.top();
-            importance_pq.pop();
-
-            switch (heuristic) {
-                case Heuristic::IN_OUT:
-                    new_importance = inOutProductHeuristic(contracted, contracted_node.second);
-                    break;
-                case Heuristic::EDGE_DIFFERENCE:
-                    new_importance = edgeDifferenceHeuristic(contracted, contracted_node.second);
-                    break;
-                case Heuristic::WEIGHTED_COST:
-                    new_importance = weightedCostHeuristic(contracted, contracted_node.second);
-                    break;
-                case Heuristic::MIXED:
-                    new_importance = mixedHeuristic(contracted, contracted_node.second, num_contracted);
-                    break;
-                default:
-                    break;
-            }
-        }
-
-        contractNode(contracted, contracted_node.second, 0);
-
-        for (auto& fwd_shortcut : m_contr_data[0].m_shortcuts_fwd)
-            m_graph_contr[fwd_shortcut.first].push_back(fwd_shortcut.second);
-        for (auto& bwd_shortcut : m_contr_data[0].m_shortcuts_bwd)
-            m_reverse_graph_contr[bwd_shortcut.first].push_back(bwd_shortcut.second);
-
-        m_contr_data[0].m_shortcuts_fwd.clear();
-        m_contr_data[0].m_shortcuts_bwd.clear();
-
-        contracted[contracted_node.second] = true;
-        m_node_level[contracted_node.second] = num_contracted;
-        ++num_contracted;
-
-        // std::cout << "Finished contracting: " << num_contracted << "\n";
-    }
-
-    m_contr_data.clear();
-
-    auto end = std::chrono::high_resolution_clock::now();
-    auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(end - begin);
-    std::cout << "Finished creating CH. Took " << elapsed.count() << " seconds" << "\n";
 }
 
 void Graph::createCHwithIS(Heuristic heuristic) {
@@ -1279,8 +1029,7 @@ void Graph::createCHwithIS(Heuristic heuristic) {
     }
 
     // initialize importance for all nodes
-    std::priority_queue<std::pair<int, int>, std::vector<std::pair<int, int>>, std::greater<std::pair<int, int>>>
-        importance_pq;
+    radix_heap::pair_radix_heap<int, int> importance_pq;
     for (int i = 0; i < m_num_nodes; ++i) {
         int importance = 0;
         switch (heuristic) {
@@ -1299,23 +1048,23 @@ void Graph::createCHwithIS(Heuristic heuristic) {
             default:
                 break;
         }
-        importance_pq.emplace(std::make_pair(importance, i));
+        importance_pq.emplace(importance, i);
     }
 
     while (num_contracted != m_num_nodes) {
         // create independet set
         std::vector<bool> marked(m_num_nodes, false);
         std::vector<int> independent_set;
-        std::priority_queue<std::pair<int, int>, std::vector<std::pair<int, int>>, std::greater<std::pair<int, int>>>
-            new_pq;
+        radix_heap::pair_radix_heap<int, int> new_pq;
 
         // TODO: this can probably be done more efficiently
         while (!importance_pq.empty()) {
-            auto contracted_node = importance_pq.top();
+            int contracted_importance = importance_pq.top_key();
+            int contracted_node_id = importance_pq.top_value();
             importance_pq.pop();
 
-            if (marked[contracted_node.second]) {
-                new_pq.emplace(contracted_node);
+            if (marked[contracted_node_id]) {
+                new_pq.emplace(contracted_importance, contracted_node_id);
                 continue;
             }
 
@@ -1323,41 +1072,42 @@ void Graph::createCHwithIS(Heuristic heuristic) {
                 int new_importance = 0;
                 switch (heuristic) {
                     case Heuristic::IN_OUT:
-                        new_importance = inOutProductHeuristic(contracted, contracted_node.second);
+                        new_importance = inOutProductHeuristic(contracted, contracted_node_id);
                         break;
                     case Heuristic::EDGE_DIFFERENCE:
-                        new_importance = edgeDifferenceHeuristic(contracted, contracted_node.second);
+                        new_importance = edgeDifferenceHeuristic(contracted, contracted_node_id);
                         break;
                     case Heuristic::WEIGHTED_COST:
-                        new_importance = weightedCostHeuristic(contracted, contracted_node.second);
+                        new_importance = weightedCostHeuristic(contracted, contracted_node_id);
                         break;
                     case Heuristic::MIXED:
-                        new_importance = mixedHeuristic(contracted, contracted_node.second, cur_level);
+                        new_importance = mixedHeuristic(contracted, contracted_node_id, cur_level);
                         break;
                     default:
                         break;
                 }
 
-                while (new_importance > importance_pq.top().first) {
-                    if (marked[contracted_node.second])
-                        new_pq.emplace(std::make_pair(new_importance, contracted_node.second));
+                while (!importance_pq.empty() && new_importance > contracted_importance) {
+                    if (marked[contracted_node_id])
+                        new_pq.emplace(new_importance, contracted_node_id);
                     else
-                        importance_pq.emplace(std::make_pair(new_importance, contracted_node.second));
-                    contracted_node = importance_pq.top();
+                        importance_pq.emplace(new_importance, contracted_node_id);
+                    contracted_importance = importance_pq.top_key();
+                    contracted_node_id = importance_pq.top_value();
                     importance_pq.pop();
 
                     switch (heuristic) {
                         case Heuristic::IN_OUT:
-                            new_importance = inOutProductHeuristic(contracted, contracted_node.second);
+                            new_importance = inOutProductHeuristic(contracted, contracted_node_id);
                             break;
                         case Heuristic::EDGE_DIFFERENCE:
-                            new_importance = edgeDifferenceHeuristic(contracted, contracted_node.second);
+                            new_importance = edgeDifferenceHeuristic(contracted, contracted_node_id);
                             break;
                         case Heuristic::WEIGHTED_COST:
-                            new_importance = weightedCostHeuristic(contracted, contracted_node.second);
+                            new_importance = weightedCostHeuristic(contracted, contracted_node_id);
                             break;
                         case Heuristic::MIXED:
-                            new_importance = mixedHeuristic(contracted, contracted_node.second, cur_level);
+                            new_importance = mixedHeuristic(contracted, contracted_node_id, cur_level);
                             break;
                         default:
                             break;
@@ -1365,16 +1115,16 @@ void Graph::createCHwithIS(Heuristic heuristic) {
                 }
             }
 
-            if (marked[contracted_node.second])
-                new_pq.emplace(contracted_node);
+            if (marked[contracted_node_id])
+                new_pq.emplace(contracted_importance, contracted_node_id);
             else {
-                marked[contracted_node.second] = true;
-                independent_set.push_back(contracted_node.second);
-                for (ContractionEdge& e : m_graph_contr[contracted_node.second]) marked[e.m_target] = true;
-                for (ContractionEdge& e : m_reverse_graph_contr[contracted_node.second]) marked[e.m_target] = true;
+                marked[contracted_node_id] = true;
+                independent_set.push_back(contracted_node_id);
+                for (ContractionEdge& e : m_graph_contr[contracted_node_id]) marked[e.m_target] = true;
+                for (ContractionEdge& e : m_reverse_graph_contr[contracted_node_id]) marked[e.m_target] = true;
             }
         }
-        importance_pq = new_pq;
+        importance_pq = std::move(new_pq);
 
 // contract nodes from independent set in parallel
 #pragma omp parallel for
@@ -1709,46 +1459,49 @@ void Graph::contractNode(std::vector<bool>& contracted, int contracted_node, int
 
 void Graph::contractionDijkstra(int start, int contracted_node, std::vector<bool>& contracted, int num_outgoing,
                                 int max_distance, int thread_num) {
-    std::priority_queue<std::pair<int, int>, std::vector<std::pair<int, int>>, std::greater<std::pair<int, int>>> pq;
+    radix_heap::pair_radix_heap<int, int> pq;
 
     int num_visited_outgoing = 0;
     m_contr_data[thread_num].m_distances[start] = 0;
     m_contr_data[thread_num].m_reset_distances.push_back(start);
-    pq.push(std::make_pair(0, start));
+    pq.emplace(0, start);
 
     while (!pq.empty()) {
-        std::pair<int, int> cur_node = pq.top();
+        int cur_dist = pq.top_key();
+        int cur_node_id = pq.top_value();
         pq.pop();
 
-        if (m_contr_data[thread_num].m_distances[cur_node.second] != cur_node.first) continue;
+        if (m_contr_data[thread_num].m_distances[cur_node_id] != cur_dist) continue;
 
-        if (m_contr_data[thread_num].m_outgoing[cur_node.second]) ++num_visited_outgoing;
-        if (cur_node.first > max_distance || num_visited_outgoing == num_outgoing) break;
+        if (m_contr_data[thread_num].m_outgoing[cur_node_id]) ++num_visited_outgoing;
+        if (cur_dist > max_distance || num_visited_outgoing == num_outgoing) break;
 
-        for (ContractionEdge& e : m_graph_contr[cur_node.second]) {
+        for (ContractionEdge& e : m_graph_contr[cur_node_id]) {
             if (contracted[e.m_target]) continue;
             if (m_contr_data[thread_num].m_distances[e.m_target] >
-                m_contr_data[thread_num].m_distances[cur_node.second] + e.m_cost) {
+                m_contr_data[thread_num].m_distances[cur_node_id] + e.m_cost) {
                 if (m_contr_data[thread_num].m_distances[e.m_target] == std::numeric_limits<int>::max())
                     m_contr_data[thread_num].m_reset_distances.push_back(e.m_target);
                 m_contr_data[thread_num].m_distances[e.m_target] =
-                    m_contr_data[thread_num].m_distances[cur_node.second] + e.m_cost;
-                pq.push(std::make_pair(m_contr_data[thread_num].m_distances[e.m_target], e.m_target));
+                    m_contr_data[thread_num].m_distances[cur_node_id] + e.m_cost;
+                pq.emplace(m_contr_data[thread_num].m_distances[e.m_target], e.m_target);
             }
         }
     }
 }
 
-int Graph::simplifiedHubLabelQuery(std::vector<std::tuple<int, int, int, int>>& fwd_labels, int node) {
+int Graph::simplifiedHubLabelQuery(std::vector<std::tuple<uint32_t, uint32_t, uint16_t, uint16_t>>& fwd_labels,
+                                   int node) {
     int distance = std::numeric_limits<int>::max();
     auto fwd_iter = fwd_labels.begin();
-    uint32_t bwd_node_index = m_bwd_indices[m_node_indices[node]];
-    uint32_t bwd_next_index = m_bwd_indices[m_node_indices[node] + 1];
+    uint64_t bwd_node_index = m_bwd_indices[m_node_indices[node]];
+    uint64_t bwd_next_index = m_bwd_indices[m_node_indices[node] + 1];
 
     while (fwd_iter != fwd_labels.end() && bwd_node_index < bwd_next_index) {
         if (std::get<0>(*fwd_iter) == std::get<0>(m_bwd_hub_labels[bwd_node_index])) {
-            if (std::get<1>(*fwd_iter) + std::get<1>(m_bwd_hub_labels[bwd_node_index]) < distance)
-                distance = std::get<1>(*fwd_iter) + std::get<1>(m_bwd_hub_labels[bwd_node_index]);
+            int total_dist = static_cast<int>(std::get<1>(*fwd_iter)) +
+                             static_cast<int>(std::get<1>(m_bwd_hub_labels[bwd_node_index]));
+            if (total_dist < distance) distance = total_dist;
             ++fwd_iter;
             ++bwd_node_index;
         } else if (std::get<0>(*fwd_iter) < std::get<0>(m_bwd_hub_labels[bwd_node_index])) {
@@ -1761,16 +1514,18 @@ int Graph::simplifiedHubLabelQuery(std::vector<std::tuple<int, int, int, int>>& 
     return distance;
 }
 
-int Graph::simplifiedHubLabelQuery(int node, std::vector<std::tuple<int, int, int, int>>& bwd_labels) {
+int Graph::simplifiedHubLabelQuery(int node,
+                                   std::vector<std::tuple<uint32_t, uint32_t, uint16_t, uint16_t>>& bwd_labels) {
     int distance = std::numeric_limits<int>::max();
-    uint32_t fwd_node_index = m_fwd_indices[m_node_indices[node]];
-    uint32_t fwd_next_index = m_fwd_indices[m_node_indices[node] + 1];
+    uint64_t fwd_node_index = m_fwd_indices[m_node_indices[node]];
+    uint64_t fwd_next_index = m_fwd_indices[m_node_indices[node] + 1];
     auto bwd_iter = bwd_labels.begin();
 
     while (fwd_node_index < fwd_next_index && bwd_iter != bwd_labels.end()) {
         if (std::get<0>(*bwd_iter) == std::get<0>(m_fwd_hub_labels[fwd_node_index])) {
-            if (std::get<1>(*bwd_iter) + std::get<1>(m_fwd_hub_labels[fwd_node_index]) < distance)
-                distance = std::get<1>(*bwd_iter) + std::get<1>(m_fwd_hub_labels[fwd_node_index]);
+            int total_dist = static_cast<int>(std::get<1>(*bwd_iter)) +
+                             static_cast<int>(std::get<1>(m_fwd_hub_labels[fwd_node_index]));
+            if (total_dist < distance) distance = total_dist;
             ++bwd_iter;
             ++fwd_node_index;
         } else if (std::get<0>(*bwd_iter) < std::get<0>(m_fwd_hub_labels[fwd_node_index])) {

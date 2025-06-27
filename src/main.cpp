@@ -67,7 +67,7 @@ void runBenchmarks(const std::string& fmi_path, int num_queries_param, bool enab
     int num_nodes_for_queries = 0;
 
     {
-        labosm::Graph temp_graph_for_nodes(fmi_path, false, labosm::Heuristic::IN_OUT);
+        labosm::Graph temp_graph_for_nodes(fmi_path, false, 1, labosm::Heuristic::IN_OUT);
         num_nodes_for_queries = temp_graph_for_nodes.getNumNodes();
     }
 
@@ -88,7 +88,7 @@ void runBenchmarks(const std::string& fmi_path, int num_queries_param, bool enab
         BenchmarkResult dijkstra_res;
         dijkstra_res.name = "Dijkstra";
 
-        labosm::Graph graph_dijkstra(fmi_path, false, labosm::Heuristic::IN_OUT);
+        labosm::Graph graph_dijkstra(fmi_path, false, 1, labosm::Heuristic::IN_OUT);
         labosm::DijkstraQueryData query_data(graph_dijkstra.getNumNodes());
 
         for (int i = 0; i < num_queries_param; ++i) {
