@@ -182,10 +182,39 @@ void Graph::readSimpleGraph(const std::string& path) {
 
     m_graph.clear();
     m_graph.resize(num_nodes);
-    m_dijkstra_graph.clear();
-    m_dijkstra_graph.resize(num_nodes);
 
-    // read edge information
+    // Initialize dijkstra graph structures
+    m_dijkstra_indices.clear();
+    m_dijkstra_indices.resize(num_nodes + 1, 0);
+    m_dijkstra_edges.clear();
+
+    // First pass: count edges per node to build indices
+    std::vector<int> edge_counts(num_nodes, 0);
+    std::streampos edge_start_pos = infile.tellg();
+
+    for (int i = 0; i < num_edges; ++i) {
+        getline(infile, line);
+        std::stringstream ss(line);
+
+        std::string s;
+        getline(ss, s, ' ');
+        int src = std::stoi(s);
+        edge_counts[src]++;
+    }
+
+    // Build indices array (cumulative sum)
+    for (int i = 0; i < num_nodes; ++i) {
+        m_dijkstra_indices[i + 1] = m_dijkstra_indices[i] + edge_counts[i];
+    }
+
+    // Reserve space for all edges
+    m_dijkstra_edges.resize(m_dijkstra_indices[num_nodes]);
+
+    // Reset to beginning of edge data
+    infile.seekg(edge_start_pos);
+
+    // Second pass: actually read and store edges
+    std::vector<uint64_t> current_positions = m_dijkstra_indices;  // Copy of indices to track current position
     for (int i = 0; i < num_edges; ++i) {
         getline(infile, line);
         std::stringstream ss(line);
@@ -198,7 +227,7 @@ void Graph::readSimpleGraph(const std::string& path) {
         getline(ss, s, ' ');
         int cost = std::stoi(s);
 
-        m_dijkstra_graph[src].emplace_back(target, cost);
+        m_dijkstra_edges[current_positions[src]++] = SimpleEdge(target, cost);
     }
 
     auto end = std::chrono::high_resolution_clock::now();
@@ -255,7 +284,8 @@ void Graph::dijkstraQuery(DijkstraQueryData& data) {
             return;
         }
 
-        for (const auto& edge : m_dijkstra_graph[node]) {
+        for (uint64_t i = m_dijkstra_indices[node]; i < m_dijkstra_indices[node + 1]; ++i) {
+            const auto& edge = m_dijkstra_edges[i];
             int new_distance = dist + edge.m_cost;
             if (new_distance < data.m_distances[edge.m_target]) {
                 pq.emplace(new_distance, edge.m_target);

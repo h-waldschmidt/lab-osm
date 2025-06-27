@@ -122,13 +122,24 @@ class Graph {
         std::vector<std::tuple<uint32_t, uint32_t, uint16_t, uint16_t>>().swap(m_bwd_hub_labels);
     }
 
+    /**
+     * @brief Clears all the dijkstra graph data from memory.
+     * Useful for freeing memory when dijkstra functionality is no longer needed.
+     */
+    void clearDijkstraGraph() {
+        std::vector<uint64_t>().swap(m_dijkstra_indices);
+        std::vector<SimpleEdge>().swap(m_dijkstra_edges);
+    }
+
    private:
     bool m_ch_available;  // ch/CH = Contraction Hierarchy
     int m_num_nodes;
     bool m_is;          // determines whether IS are used
     int m_num_threads;  // sets threads when using independent sets (IS)
 
-    std::vector<std::vector<SimpleEdge>> m_dijkstra_graph;
+    // dijkstra graph data structure with flat edge storage
+    std::vector<uint64_t> m_dijkstra_indices;  // indices for each node to the corresponding edges
+    std::vector<SimpleEdge> m_dijkstra_edges;  // flat vector containing all edges
 
     // used for CH/HL
     std::vector<std::vector<Edge>> m_graph;

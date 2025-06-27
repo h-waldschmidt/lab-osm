@@ -92,6 +92,7 @@ struct SimpleEdge {
     int m_target;  // corresponds to index of node in graph data structure
     int m_cost;
 
+    SimpleEdge() : m_target(0), m_cost(0) {}
     SimpleEdge(int target, int cost) : m_target(target), m_cost(cost) {}
 };
 
