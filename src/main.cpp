@@ -220,9 +220,10 @@ void runBenchmarks(const std::string& fmi_path, int num_queries_param, bool enab
                 std::chrono::duration_cast<std::chrono::milliseconds>(hl_create_end - hl_create_start).count();
             std::cout << "  Hub Labels for " << heuristic_name_str << " created in " << create_time_ms << " ms."
                       << std::endl;
-            labosm::QueryData query_data_hl(graph_ch_hl.getNumNodes());
+
+            // Reuse the same query data structure to save memory
             for (int i = 0; i < num_queries_param; ++i) {
-                query_data_hl.reset();
+                query_data_ch.reset();
 
                 // Map query node IDs to the reordered CH node IDs
                 int start_old = queries[i].first;
@@ -237,31 +238,31 @@ void runBenchmarks(const std::string& fmi_path, int num_queries_param, bool enab
                     continue;
                 }
 
-                query_data_hl.m_start = start_new;
-                query_data_hl.m_end = end_new;
-                std::pair<uint32_t, uint32_t> hub_indices;
+                query_data_ch.m_start = start_new;
+                query_data_ch.m_end = end_new;
+                std::pair<uint64_t, uint64_t> hub_indices;
                 auto query_start_time = std::chrono::high_resolution_clock::now();
-                hub_indices = graph_ch_hl.hubLabelQuery(query_data_hl);
+                hub_indices = graph_ch_hl.hubLabelQuery(query_data_ch);
                 auto query_end_time = std::chrono::high_resolution_clock::now();
                 hl_res.total_query_time_us +=
                     std::chrono::duration_cast<std::chrono::microseconds>(query_end_time - query_start_time).count();
-                hl_res.total_pq_pops += query_data_hl.num_pq_pops;
-                bool current_algo_path_exists_hl = (query_data_hl.m_distance != std::numeric_limits<int>::max());
+                hl_res.total_pq_pops += query_data_ch.num_pq_pops;
+                bool current_algo_path_exists_hl = (query_data_ch.m_distance != std::numeric_limits<int>::max());
                 if (current_algo_path_exists_hl != dijkstra_path_exists[i]) {
                     std::cout << "  MISMATCH (Path Existence): HL (" << heuristic_name_str << " CH) Query " << i << " ("
                               << queries[i].first << "->" << queries[i].second
                               << ") - HL path existence: " << current_algo_path_exists_hl
                               << ", Dijkstra path existence: " << dijkstra_path_exists[i] << std::endl;
-                } else if (current_algo_path_exists_hl && query_data_hl.m_distance != dijkstra_distances[i]) {
+                } else if (current_algo_path_exists_hl && query_data_ch.m_distance != dijkstra_distances[i]) {
                     std::cout << "  MISMATCH (Distance): HL (" << heuristic_name_str << " CH) Query " << i << " ("
                               << queries[i].first << "->" << queries[i].second
-                              << ") - HL dist: " << query_data_hl.m_distance
+                              << ") - HL dist: " << query_data_ch.m_distance
                               << ", Dijkstra dist: " << dijkstra_distances[i] << std::endl;
                 }
                 if (current_algo_path_exists_hl) {
                     hl_res.num_successful_queries++;
                     auto path_start_time = std::chrono::high_resolution_clock::now();
-                    graph_ch_hl.hubLabelExtractPath(query_data_hl, hub_indices);
+                    graph_ch_hl.hubLabelExtractPath(query_data_ch, hub_indices);
                     auto path_end_time = std::chrono::high_resolution_clock::now();
                     hl_res.total_path_time_us +=
                         std::chrono::duration_cast<std::chrono::microseconds>(path_end_time - path_start_time).count();

@@ -7,11 +7,9 @@
 #include <cstdint>
 #include <fstream>
 #include <iostream>
-#include <numeric>
 #include <sstream>
 #include <tuple>
 #include <unordered_map>
-#include <unordered_set>
 #include <utility>
 
 #include "../third-party/radix_heap.h"
@@ -149,7 +147,7 @@ void Graph::readGraph(const std::string& path) {
     infile.seekg(edge_start_pos);
 
     // Second pass: actually read and store edges
-    std::vector<uint64_t> current_positions = m_graph_indices;  // Copy of indices to track current position
+    std::vector<uint32_t> current_positions = m_graph_indices;  // Copy of indices to track current position
     for (int i = 0; i < num_edges; ++i) {
         getline(infile, line);
         std::stringstream ss(line);
@@ -455,70 +453,90 @@ void Graph::contractionHierarchyExtractPath(QueryData& data) {
     }
 
     data.m_shortest_path.clear();
-    std::vector<std::tuple<int, int, bool>> fwd_edges;
+
+    // Use temporary vectors from QueryData to avoid repeated allocations
+    data.m_temp_fwd_edges.clear();
+    data.m_temp_bwd_edges.clear();
+    data.m_temp_fwd_path.clear();
+    data.m_temp_bwd_path.clear();
 
     int cur_node = data.m_meeting_node;
 
-    std::cout << "Debug before gathering edges fwd" << "\n";
-
+    // Gather forward edges - use temporary vector
     while (cur_node != data.m_start) {
-        std::cout << "Cur Node FWD: " << cur_node << "\n";
-        std::cout << "Edge Index: " << data.m_fwd_prev_edge[cur_node].first << " "
-                  << data.m_fwd_prev_edge[cur_node].second << "\n";
-        fwd_edges.push_back(
-            std::make_tuple(data.m_fwd_prev_edge[cur_node].first, data.m_fwd_prev_edge[cur_node].second, true));
+        data.m_temp_fwd_edges.emplace_back(data.m_fwd_prev_edge[cur_node].first, data.m_fwd_prev_edge[cur_node].second,
+                                           true);
         cur_node = data.m_fwd_prev_edge[cur_node].first;
     }
-    std::reverse(fwd_edges.begin(), fwd_edges.end());
+    std::reverse(data.m_temp_fwd_edges.begin(), data.m_temp_fwd_edges.end());
 
-    std::cout << "Debug before unpacking edges fwd" << "\n";
-    std::vector<int> fwd_path;
-    // resolve shortcut edges
-    if (fwd_edges.empty()) {
-        fwd_path.push_back(data.m_start);
+    // Unpack forward edges efficiently - reserve space to avoid reallocations
+    if (data.m_temp_fwd_edges.empty()) {
+        data.m_temp_fwd_path.push_back(data.m_start);
     } else {
-        unpackEdge(fwd_edges[0], fwd_path);
+        // Estimate path length to reserve space
+        data.m_temp_fwd_path.reserve(data.m_temp_fwd_edges.size() * 3);
 
-        for (size_t i = 1; i < fwd_edges.size(); ++i) {
-            std::vector<int> path;
-            unpackEdge(fwd_edges[i], path);
-            fwd_path.insert(fwd_path.end(), path.begin() + 1, path.end());
+        unpackEdge(data.m_temp_fwd_edges[0], data.m_temp_fwd_path);
+
+        // Use a small temporary vector for each edge unpacking to avoid frequent reallocations
+        std::vector<int> temp_edge_path;
+        temp_edge_path.reserve(50);  // Reserve reasonable space for typical shortcut depth
+
+        for (size_t i = 1; i < data.m_temp_fwd_edges.size(); ++i) {
+            temp_edge_path.clear();
+            unpackEdge(data.m_temp_fwd_edges[i], temp_edge_path);
+            // More efficient than insert: manually append elements
+            data.m_temp_fwd_path.reserve(data.m_temp_fwd_path.size() + temp_edge_path.size() - 1);
+            for (size_t j = 1; j < temp_edge_path.size(); ++j) {
+                data.m_temp_fwd_path.push_back(temp_edge_path[j]);
+            }
         }
     }
 
-    std::cout << "Debug before gathering edges bwd" << "\n";
-    std::vector<std::tuple<int, int, bool>> bwd_edges;
+    // Gather backward edges - use temporary vector
     cur_node = data.m_meeting_node;
     while (cur_node != data.m_end) {
-        std::cout << "Cur Node BWD: " << cur_node << "\n";
-        std::cout << "Edge Index: " << data.m_fwd_prev_edge[cur_node].first << " "
-                  << data.m_fwd_prev_edge[cur_node].second << "\n";
-
-        bwd_edges.push_back(
-            std::make_tuple(data.m_bwd_prev_edge[cur_node].first, data.m_bwd_prev_edge[cur_node].second, false));
+        data.m_temp_bwd_edges.emplace_back(data.m_bwd_prev_edge[cur_node].first, data.m_bwd_prev_edge[cur_node].second,
+                                           false);
         cur_node = data.m_bwd_prev_edge[cur_node].first;
     }
 
-    std::cout << "Debug before unpacking edges bwd" << "\n";
-    std::vector<int> bwd_path;
-    if (bwd_edges.empty()) {
-        bwd_path.push_back(data.m_end);
+    // Unpack backward edges efficiently
+    if (data.m_temp_bwd_edges.empty()) {
+        data.m_temp_bwd_path.push_back(data.m_end);
     } else {
-        unpackEdge(bwd_edges[0], bwd_path);
-        for (size_t i = 1; i < bwd_edges.size(); ++i) {
-            std::vector<int> path;
-            unpackEdge(bwd_edges[i], path);
-            bwd_path.insert(bwd_path.end(), path.begin() + 1, path.end());
+        // Estimate path length to reserve space
+        data.m_temp_bwd_path.reserve(data.m_temp_bwd_edges.size() * 3);
+
+        unpackEdge(data.m_temp_bwd_edges[0], data.m_temp_bwd_path);
+
+        // Reuse the same temporary vector
+        std::vector<int> temp_edge_path;
+        temp_edge_path.reserve(50);
+
+        for (size_t i = 1; i < data.m_temp_bwd_edges.size(); ++i) {
+            temp_edge_path.clear();
+            unpackEdge(data.m_temp_bwd_edges[i], temp_edge_path);
+            // More efficient than insert: manually append elements
+            data.m_temp_bwd_path.reserve(data.m_temp_bwd_path.size() + temp_edge_path.size() - 1);
+            for (size_t j = 1; j < temp_edge_path.size(); ++j) {
+                data.m_temp_bwd_path.push_back(temp_edge_path[j]);
+            }
         }
     }
 
-    std::cout << "Debug before combining paths" << "\n";
-    // combine the paths
-    for (size_t i = 0; i < fwd_path.size(); ++i) {
-        data.m_shortest_path.push_back(fwd_path[i]);
+    // Combine paths efficiently - reserve total space upfront
+    data.m_shortest_path.reserve(data.m_temp_fwd_path.size() + data.m_temp_bwd_path.size() - 1);
+
+    // Copy forward path
+    for (int node : data.m_temp_fwd_path) {
+        data.m_shortest_path.push_back(node);
     }
-    for (size_t i = 1; i < bwd_path.size(); ++i) {
-        data.m_shortest_path.push_back(bwd_path[i]);
+
+    // Copy backward path (skip first element to avoid duplication)
+    for (size_t i = 1; i < data.m_temp_bwd_path.size(); ++i) {
+        data.m_shortest_path.push_back(data.m_temp_bwd_path[i]);
     }
 }
 
@@ -834,84 +852,107 @@ std::pair<uint64_t, uint64_t> Graph::hubLabelQuery(QueryData& data) {
 
 // NOTE: Is very similar to CH Path extraction
 // But need to look at the fwd and bwd labels
-void Graph::hubLabelExtractPath(QueryData& data, std::pair<int, int> hub_indices) {
+void Graph::hubLabelExtractPath(QueryData& data, std::pair<uint64_t, uint64_t> hub_indices) {
     if (data.m_distance == std::numeric_limits<int>::max() || data.m_distance == -1 || data.m_meeting_node == -1) {
         std::cout << "Can't return path for invalid data!" << "\n";
         return;
     }
 
     data.m_shortest_path.clear();
-    std::vector<std::tuple<int, int, bool>> fwd_edges;
 
-    std::cout << "Debug before gathering edges fwd" << "\n";
+    // Use temporary vectors from QueryData to avoid repeated allocations
+    data.m_temp_fwd_edges.clear();
+    data.m_temp_bwd_edges.clear();
+    data.m_temp_fwd_path.clear();
+    data.m_temp_bwd_path.clear();
 
+    // Gather forward edges - use temporary vector
     int cur_node = data.m_start;
     auto cur_fwd_label = m_fwd_hub_labels[hub_indices.first];
     while (cur_node != data.m_meeting_node) {
-        std::cout << "Cur Node FWD: " << cur_node << "\n";
-
         // Get edge using flat structure: base index + relative edge index
         uint64_t absolute_edge_idx = m_graph_indices[cur_node] + std::get<2>(cur_fwd_label);
         Edge e = m_graph_edges[absolute_edge_idx];
-        fwd_edges.push_back(std::make_tuple(cur_node, std::get<2>(cur_fwd_label), true));
+        data.m_temp_fwd_edges.emplace_back(cur_node, std::get<2>(cur_fwd_label), true);
         cur_node = e.m_target;
         // Calculate absolute index: base index for target node + offset stored in tuple
-        cur_fwd_label = m_fwd_hub_labels[m_fwd_indices[cur_node] + std::get<3>(cur_fwd_label)];
+        cur_fwd_label = m_fwd_hub_labels[m_fwd_indices[cur_node] + static_cast<uint64_t>(std::get<3>(cur_fwd_label))];
     }
 
-    std::cout << "Debug before unpacking edges fwd" << "\n";
-
-    std::vector<int> fwd_path;
-    // resolve shortcut edges
-    if (fwd_edges.empty()) {
-        fwd_path.push_back(data.m_start);
+    // Unpack forward edges efficiently - reserve space to avoid reallocations
+    if (data.m_temp_fwd_edges.empty()) {
+        data.m_temp_fwd_path.push_back(data.m_start);
     } else {
-        unpackEdge(fwd_edges[0], fwd_path);
+        // Estimate path length to reserve space
+        data.m_temp_fwd_path.reserve(data.m_temp_fwd_edges.size() * 3);
 
-        for (size_t i = 1; i < fwd_edges.size(); ++i) {
-            std::vector<int> path;
-            unpackEdge(fwd_edges[i], path);
-            fwd_path.insert(fwd_path.end(), path.begin() + 1, path.end());
+        unpackEdge(data.m_temp_fwd_edges[0], data.m_temp_fwd_path);
+
+        // Use a small temporary vector for each edge unpacking to avoid frequent reallocations
+        std::vector<int> temp_edge_path;
+        temp_edge_path.reserve(50);  // Reserve reasonable space for typical shortcut depth
+
+        for (size_t i = 1; i < data.m_temp_fwd_edges.size(); ++i) {
+            temp_edge_path.clear();
+            unpackEdge(data.m_temp_fwd_edges[i], temp_edge_path);
+            // More efficient than insert: manually append elements
+            data.m_temp_fwd_path.reserve(data.m_temp_fwd_path.size() + temp_edge_path.size() - 1);
+            for (size_t j = 1; j < temp_edge_path.size(); ++j) {
+                data.m_temp_fwd_path.push_back(temp_edge_path[j]);
+            }
         }
     }
 
-    std::cout << "Debug before gathering edges bwd" << "\n";
-    std::vector<std::tuple<int, int, bool>> bwd_edges;
+    // Gather backward edges - use temporary vector
     cur_node = data.m_end;
     auto cur_bwd_label = m_bwd_hub_labels[hub_indices.second];
     while (cur_node != data.m_meeting_node) {
         // Get edge using flat structure: base index + relative edge index
         uint64_t absolute_edge_idx = m_reverse_graph_indices[cur_node] + std::get<2>(cur_bwd_label);
         Edge e = m_reverse_graph_edges[absolute_edge_idx];
-        bwd_edges.push_back(std::make_tuple(cur_node, std::get<2>(cur_bwd_label), false));
+        data.m_temp_bwd_edges.emplace_back(cur_node, std::get<2>(cur_bwd_label), false);
         cur_node = e.m_target;
         // Calculate absolute index: base index for target node + offset stored in tuple
-        cur_bwd_label = m_bwd_hub_labels[m_bwd_indices[cur_node] + std::get<3>(cur_bwd_label)];
-        std::cout << "Cur Node BWD: " << cur_node << "\n";
+        cur_bwd_label = m_bwd_hub_labels[m_bwd_indices[cur_node] + static_cast<uint64_t>(std::get<3>(cur_bwd_label))];
     }
 
-    std::reverse(bwd_edges.begin(), bwd_edges.end());
+    std::reverse(data.m_temp_bwd_edges.begin(), data.m_temp_bwd_edges.end());
 
-    std::cout << "Debug before unpacking edges bwd" << "\n";
-    std::vector<int> bwd_path;
-    if (bwd_edges.empty()) {
-        bwd_path.push_back(data.m_end);
+    // Unpack backward edges efficiently
+    if (data.m_temp_bwd_edges.empty()) {
+        data.m_temp_bwd_path.push_back(data.m_end);
     } else {
-        unpackEdge(bwd_edges[0], bwd_path);
-        for (size_t i = 1; i < bwd_edges.size(); ++i) {
-            std::vector<int> path;
-            unpackEdge(bwd_edges[i], path);
-            bwd_path.insert(bwd_path.end(), path.begin() + 1, path.end());
+        // Estimate path length to reserve space
+        data.m_temp_bwd_path.reserve(data.m_temp_bwd_edges.size() * 3);
+
+        unpackEdge(data.m_temp_bwd_edges[0], data.m_temp_bwd_path);
+
+        // Reuse the same temporary vector
+        std::vector<int> temp_edge_path;
+        temp_edge_path.reserve(50);
+
+        for (size_t i = 1; i < data.m_temp_bwd_edges.size(); ++i) {
+            temp_edge_path.clear();
+            unpackEdge(data.m_temp_bwd_edges[i], temp_edge_path);
+            // More efficient than insert: manually append elements
+            data.m_temp_bwd_path.reserve(data.m_temp_bwd_path.size() + temp_edge_path.size() - 1);
+            for (size_t j = 1; j < temp_edge_path.size(); ++j) {
+                data.m_temp_bwd_path.push_back(temp_edge_path[j]);
+            }
         }
     }
 
-    std::cout << "Debug before combining paths" << "\n";
-    // combine the paths
-    for (size_t i = 0; i < fwd_path.size(); ++i) {
-        data.m_shortest_path.push_back(fwd_path[i]);
+    // Combine paths efficiently - reserve total space upfront
+    data.m_shortest_path.reserve(data.m_temp_fwd_path.size() + data.m_temp_bwd_path.size() - 1);
+
+    // Copy forward path
+    for (int node : data.m_temp_fwd_path) {
+        data.m_shortest_path.push_back(node);
     }
-    for (size_t i = 1; i < bwd_path.size(); ++i) {
-        data.m_shortest_path.push_back(bwd_path[i]);
+
+    // Copy backward path (skip first element to avoid duplication)
+    for (size_t i = 1; i < data.m_temp_bwd_path.size(); ++i) {
+        data.m_shortest_path.push_back(data.m_temp_bwd_path[i]);
     }
 }
 
@@ -993,11 +1034,11 @@ void Graph::createReverseGraphNormal() {
     m_reverse_graph_edges.resize(m_reverse_graph_indices[m_num_nodes]);
 
     // Second pass: populate reverse graph
-    std::vector<uint64_t> current_positions = m_reverse_graph_indices;
+    std::vector<uint32_t> current_positions = m_reverse_graph_indices;
     for (int i = 0; i < m_num_nodes; ++i) {
-        uint64_t start_idx = m_graph_indices[i];
-        uint64_t end_idx = m_graph_indices[i + 1];
-        for (uint64_t j = start_idx; j < end_idx; ++j) {
+        uint32_t start_idx = m_graph_indices[i];
+        uint32_t end_idx = m_graph_indices[i + 1];
+        for (uint32_t j = start_idx; j < end_idx; ++j) {
             const Edge& e = m_graph_edges[j];
             int new_source = e.m_target;
             Edge reverse_edge = e;
@@ -1023,14 +1064,14 @@ void Graph::createReverseGraphCH() {
               });
 
     // Create mapping arrays
-    m_old_to_new_mapping.resize(m_num_nodes);  // m_old_to_new_mapping[old_id] = new_id
-    m_new_to_old_mapping.resize(m_num_nodes);  // m_new_to_old_mapping[new_id] = old_id
+    m_old_to_new_mapping.resize(m_num_nodes);          // m_old_to_new_mapping[old_id] = new_id
+    std::vector<int> new_to_old_mapping(m_num_nodes);  // new_to_old_mapping[new_id] = old_id (local variable)
 
     for (int i = 0; i < m_num_nodes; ++i) {
         int old_id = node_level_pairs[i].second;
         int new_id = i;
         m_old_to_new_mapping[old_id] = new_id;
-        m_new_to_old_mapping[new_id] = old_id;
+        new_to_old_mapping[new_id] = old_id;
     }
 
     // Create reordered copies of the contraction graphs with new node IDs
@@ -1057,7 +1098,7 @@ void Graph::createReverseGraphCH() {
     // Update node_level array to match new ordering BEFORE edge separation
     std::vector<int> new_node_level(m_num_nodes);
     for (int new_i = 0; new_i < m_num_nodes; ++new_i) {
-        int old_i = m_new_to_old_mapping[new_i];
+        int old_i = new_to_old_mapping[new_i];
         new_node_level[new_i] = m_node_level[old_i];
     }
     m_node_level = std::move(new_node_level);
@@ -1091,7 +1132,7 @@ void Graph::createReverseGraphCH() {
     if (!m_node_coords.empty()) {
         std::vector<std::pair<double, double>> new_node_coords(m_num_nodes);
         for (int new_i = 0; new_i < m_num_nodes; ++new_i) {
-            int old_i = m_new_to_old_mapping[new_i];
+            int old_i = new_to_old_mapping[new_i];
             new_node_coords[new_i] = m_node_coords[old_i];
         }
         m_node_coords = std::move(new_node_coords);

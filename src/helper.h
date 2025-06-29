@@ -208,6 +208,12 @@ struct QueryData {
     std::vector<int> m_reset_nodes_fwd;
     std::vector<int> m_reset_nodes_bwd;
 
+    // Temporary working vectors for path extraction to avoid repeated allocations
+    std::vector<std::tuple<int, int, bool>> m_temp_fwd_edges;
+    std::vector<std::tuple<int, int, bool>> m_temp_bwd_edges;
+    std::vector<int> m_temp_fwd_path;
+    std::vector<int> m_temp_bwd_path;
+
     int num_pq_pops = 0;
 
     QueryData(int num_nodes)
@@ -235,6 +241,12 @@ struct QueryData {
         m_reset_nodes_fwd.clear();
         m_reset_nodes_bwd.clear();
         m_shortest_path.clear();
+
+        // Clear temporary working vectors
+        m_temp_fwd_edges.clear();
+        m_temp_bwd_edges.clear();
+        m_temp_fwd_path.clear();
+        m_temp_bwd_path.clear();
     }
     bool needReset() const { return !m_reset_nodes_fwd.empty() || !m_reset_nodes_bwd.empty(); }
 };

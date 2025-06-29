@@ -85,7 +85,7 @@ class Graph {
      * @param data to extract path from
      * @param hub_indices indices of the hub labels
      */
-    void hubLabelExtractPath(QueryData& data, std::pair<int, int> hub_indices);
+    void hubLabelExtractPath(QueryData& data, std::pair<uint64_t, uint64_t> hub_indices);
 
     /**
      * @brief Calculates the distance of two given points based on the Haversine Formula
@@ -123,20 +123,6 @@ class Graph {
     }
 
     /**
-     * @brief Get the old node ID corresponding to a new node ID after CH reordering.
-     * Returns -1 if no reordering has been performed or if the new_id is invalid.
-     *
-     * @param new_id New node ID after CH reordering
-     * @return Original node ID before CH reordering, or -1 if invalid
-     */
-    int getOldNodeId(int new_id) const {
-        if (m_new_to_old_mapping.empty() || new_id < 0 || new_id >= m_new_to_old_mapping.size()) {
-            return -1;
-        }
-        return m_new_to_old_mapping[new_id];
-    }
-
-    /**
      * @brief Check if node reordering has been performed (i.e., CH has been built with reordering).
      *
      * @return true if node reordering has been performed, false otherwise
@@ -171,9 +157,9 @@ class Graph {
      * Useful for freeing memory when CH functionality is no longer needed.
      */
     void clearCHGraph() {
-        std::vector<uint64_t>().swap(m_graph_indices);
+        std::vector<uint32_t>().swap(m_graph_indices);
         std::vector<Edge>().swap(m_graph_edges);
-        std::vector<uint64_t>().swap(m_reverse_graph_indices);
+        std::vector<uint32_t>().swap(m_reverse_graph_indices);
         std::vector<Edge>().swap(m_reverse_graph_edges);
     }
 
@@ -188,9 +174,9 @@ class Graph {
     std::vector<SimpleEdge> m_dijkstra_edges;  // flat vector containing all edges
 
     // used for CH/HL - flat edge storage
-    std::vector<uint64_t> m_graph_indices;  // indices for each node to the corresponding edges in m_graph_edges
+    std::vector<uint32_t> m_graph_indices;  // indices for each node to the corresponding edges in m_graph_edges
     std::vector<Edge> m_graph_edges;        // flat vector containing all forward edges
-    std::vector<uint64_t>
+    std::vector<uint32_t>
         m_reverse_graph_indices;  // indices for each node to the corresponding edges in m_reverse_graph_edges
     std::vector<Edge> m_reverse_graph_edges;  // flat vector containing all reverse edges
     std::vector<int> m_node_level;
@@ -214,7 +200,6 @@ class Graph {
 
     // Node ID mapping after CH reordering (highest importance gets node_id 0)
     std::vector<int> m_old_to_new_mapping;  // m_old_to_new_mapping[old_id] = new_id
-    std::vector<int> m_new_to_old_mapping;  // m_new_to_old_mapping[new_id] = old_id
 
     /**
      * @brief Reads the graph from a file.
