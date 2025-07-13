@@ -28,9 +28,7 @@ Example workflow looks like this to generate graph with `4M` points and run simp
 - Generating FMI Graph with 16 Threads and `4000000` Points: `9874 = 9,8s`
   - Results in `21754558` Edges
 
-TODO: 9836595ms for 1M Graph
-
-### Preprocessing Time
+### CH and HL Preprocessing Time
 
 #### Stuttgart Graph (Nodes: 1132113 Edges: 2292887)
 
@@ -103,7 +101,7 @@ With `radix_heap::pair_radix_heap`:
 | CH (MIXED)                      | 68.294               | 83.978              | 498.966      | 780.321x |
 | Hub Labels (MIXED CH)           | 1.0394               | 78.5008             | 0            | 51271.2x |
 
-Flatten graph arrays and CH node reordering:
+Flatten Graph from `std::vector<std::vector<Edge>>` to `std::vector<Index>` and `std::vector<Edge>` and CH node reordering:
 
 | Algorithm                       | Avg. Query Time (us) | Avg. Path Time (us) | Avg. PQ Pops | Speed-up |
 | ------------------------------- | -------------------- | ------------------- | ------------ | -------- |
@@ -147,7 +145,7 @@ With `radix_heap::pair_radix_heap`:
 | CH (MIXED)                      | 156.216              | 179.928             | 998.075      | 1190.71x |
 | Hub Labels (MIXED CH)           | 1.1676               | 171.592             | 0            | 159309x  |
 
-Flatten graph arrays and CH node reordering:
+Flatten Graph from `std::vector<std::vector<Edge>>` to `std::vector<Index>` and `std::vector<Edge>` and CH node reordering:
 
 | Algorithm                       | Avg. Query Time (us) | Avg. Path Time (us) | Avg. PQ Pops | Speed-up |
 | ------------------------------- | -------------------- | ------------------- | ------------ | -------- |
@@ -175,7 +173,7 @@ Flatten graph arrays and CH node reordering:
 | CH (MIXED)                      | 2532.62              | 97.0062             | 10486.4      | 32.4695x |
 | Hub Labels (MIXED CH)           | 1.7307               | 70.4157             | 0            | 47514.2x |
 
-Flatten graph arrays and CH node reordering:
+Flatten Graph from `std::vector<std::vector<Edge>>` to `std::vector<Index>` and `std::vector<Edge>` and CH node reordering:
 
 | Algorithm                       | Avg. Query Time (us) | Avg. Path Time (us) | Avg. PQ Pops | Speed-up |
 | ------------------------------- | -------------------- | ------------------- | ------------ | -------- |
@@ -211,7 +209,7 @@ DFS reordering and Radix PQ:
 | CH (WEIGHTED_COST)   | 60313.5              | 256.947             | 146432       | 6.87937x |
 | CH (MIXED)           | 49416.6              | 258.082             | 123934       | 8.39635x |
 
-Flatten graph arrays and CH node reordering:
+Flatten Graph from `std::vector<std::vector<Edge>>` to `std::vector<Index>` and `std::vector<Edge>` and CH node reordering:
 
 | Algorithm            | Avg. Query Time (us) | Avg. Path Time (us) | Avg. PQ Pops | Speed-up |
 | -------------------- | -------------------- | ------------------- | ------------ | -------- |
