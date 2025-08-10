@@ -307,10 +307,7 @@ void Graph::dijkstraQuery(DijkstraQueryData& data) {
         pq.pop();
         data.num_pq_pops++;
 
-        if (data.m_distances[node] <= dist) continue;
-
-        data.m_distances[node] = dist;
-        data.m_reset_nodes.push_back(node);
+        if (data.m_distances[node] < dist) continue;
 
         if (node == data.m_end) {
             data.m_distance = dist;
@@ -321,7 +318,12 @@ void Graph::dijkstraQuery(DijkstraQueryData& data) {
             const auto& edge = m_dijkstra_edges[i];
             int new_distance = dist + edge.m_cost;
             if (new_distance < data.m_distances[edge.m_target]) {
+                if (data.m_distances[edge.m_target] == std::numeric_limits<int>::max()) {
+                    data.m_reset_nodes.push_back(edge.m_target);
+                }
+
                 pq.emplace(new_distance, edge.m_target);
+                data.m_distances[edge.m_target] = new_distance;
                 data.m_prev[edge.m_target] = node;
             }
         }
