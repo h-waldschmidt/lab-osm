@@ -17,6 +17,9 @@ For image based filtering download [this image from NASA](https://eoimages.gsfc.
 
 You can also generate the images based on the OSM data. This takes around `134s = 2,23min` for a `21600x10800` image.
 
+The generated image can be found in `images/image_osm_data_paralell.png`:
+![](images/image_osm_data_paralell.png)
+
 Example workflow looks like this to generate graph with `4M` points and run simpleserver with just dijkstra algorithm:
 1. `./build/labosm generate_points planet-coastlinespbf-cleaned.osm.pbf output/4M 4000000`
 2. `./build/labosm points_to_fmi output/4M_filtered_points.geojson output/6M_graph.fmi`
