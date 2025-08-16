@@ -337,6 +337,9 @@ int main(int argc, char* argv[]) {
         std::cout << "Example: ./labosm points_to_fmi filtered_points.geojson output.fmi\n" << "\n";
         std::cout << "Converts the filtered points to a fmi file\n" << "\n";
 
+        std::cout << "Example: ./labosm generate_coastline_image input.osm.pbf output.png width height\n";
+        std::cout << "Generates a binary image from coastline data where water is white and land is black\n" << "\n";
+
         std::cout << "Example: ./labosm create_chfmi input.fmi heuristic_name\n";
         std::cout << "Takes an FMI file, generates Contraction Hierarchy data using the specified heuristic, and saves "
                      "it to input_heuristicName.chfmi\n";
@@ -392,6 +395,16 @@ int main(int argc, char* argv[]) {
         }
         labosm::GraphCreator graph_creator;
         graph_creator.generateGraph(argv[2], argv[3]);
+        return 0;
+    } else if (argv[1] == std::string("generate_coastline_image")) {
+        if (argc != 6) {
+            std::cerr << "Usage: ./labosm generate_coastline_image input.osm.pbf output.png width height" << "\n";
+            return 1;
+        }
+        labosm::GraphCreator graph_creator;
+        int width = std::stoi(argv[4]);
+        int height = std::stoi(argv[5]);
+        graph_creator.generateCoastlineImage(argv[2], argv[3], width, height);
         return 0;
     } else if (argv[1] == std::string("create_chfmi")) {
         if (argc != 4) {  // Expect 4 arguments: ./labosm create_chfmi input.fmi heuristic_name

@@ -15,6 +15,9 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include "../third-party/stb_image.h"
 
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "../third-party/stb_image_write.h"
+
 namespace labosm {
 
 void GraphCreator::generatePointsAndFilter(const std::string& coastlines, int num_points,
@@ -182,6 +185,12 @@ void GraphCreator::generatePointsAndFilter(const std::string& coastlines, int nu
 bool GraphCreator::isPointInWaterImageBased(double lat_deg, double lon_deg, const unsigned char* img_data,
                                             int img_width, int img_height, int img_channels) const {
     auto [px, py] = latlon_to_pixel(lat_deg, lon_deg, img_width, img_height);
+
+    // around the south pole we can assume all is land
+    if (lat_deg <= -85.0) {
+        return false;
+    }
+
     // Assuming white (255,255,255) is land
     if (img_channels >= 3 &&
         !(img_data[static_cast<size_t>(py) * img_width * img_channels + static_cast<size_t>(px) * img_channels] ==
@@ -563,6 +572,185 @@ void GraphCreator::writeGraphToFMI(const std::vector<std::pair<double, double>>&
         for (const auto& edge : edges) {
             out << i << " " << edge.m_target << " " << edge.m_cost << " 0 0\n";
         }
+    }
+}
+
+std::vector<unsigned char> GraphCreator::rasterizeCoastlines(int width, int height, const NodeMap& nodes,
+                                                             const WayList& ways) {
+    // Initialize image with water (black = 0)
+    std::vector<unsigned char> image(static_cast<size_t>(width) * height, 0);
+
+    // Convert ways to a vector for parallel processing
+    std::vector<std::pair<uint64_t, std::vector<uint64_t>>> ways_vector(ways.begin(), ways.end());
+
+// Process polygons in parallel
+#pragma omp parallel for schedule(dynamic)
+    for (size_t way_idx = 0; way_idx < ways_vector.size(); ++way_idx) {
+        const auto& way_entry = ways_vector[way_idx];
+        const auto& way_node_ids = way_entry.second;
+        if (way_node_ids.size() < 3) continue;  // Skip ways that can't form a closed polygon
+
+        std::vector<std::pair<int, int>> polygon_pixels;
+
+        // Convert lat/lon coordinates to pixel coordinates
+        for (const auto& node_id : way_node_ids) {
+            auto node_it = nodes.find(node_id);
+            if (node_it != nodes.end()) {
+                const auto& [lon, lat] = node_it->second;
+                auto [px, py] = latlon_to_pixel(lat, lon, width, height);
+
+                // Clamp to image bounds
+                px = std::max(0, std::min(px, width - 1));
+                py = std::max(0, std::min(py, height - 1));
+
+                polygon_pixels.emplace_back(px, py);
+            }
+        }
+
+        // Ensure the polygon is closed by checking if first and last points are the same
+        if (!polygon_pixels.empty() && polygon_pixels.size() >= 3) {
+            if (polygon_pixels.front() != polygon_pixels.back()) {
+                // If not closed, close it by adding the first point at the end
+                std::cout << "Warning: Polygon is not closed. Closing it by adding the first point at the end."
+                          << std::endl;
+                polygon_pixels.push_back(polygon_pixels.front());
+            }
+
+            // Use scanline fill algorithm to fill the polygon (land = white = 255)
+            fillPolygonParallel(image, polygon_pixels, width, height, 255);
+        } else {
+            std::cout << "Warning: Polygon is not valid (less than 3 points)." << std::endl;
+        }
+    }
+
+    return image;
+}
+
+void GraphCreator::fillPolygonParallel(std::vector<unsigned char>& image,
+                                       const std::vector<std::pair<int, int>>& polygon_pixels, int width, int height,
+                                       unsigned char fill_value) {
+    if (polygon_pixels.size() < 3) return;
+
+    // Find bounding box of the polygon
+    int min_y = height, max_y = -1;
+    for (const auto& [px, py] : polygon_pixels) {
+        min_y = std::min(min_y, py);
+        max_y = std::max(max_y, py);
+    }
+
+    // Clamp to image bounds
+    min_y = std::max(0, min_y);
+    max_y = std::min(height - 1, max_y);
+
+// Parallel scanline fill algorithm - each scanline can be processed independently
+#pragma omp parallel for schedule(static)
+    for (int y = min_y; y <= max_y; ++y) {
+        std::vector<int> intersections;
+
+        // Find intersections of scanline with polygon edges
+        for (size_t i = 0; i < polygon_pixels.size(); ++i) {
+            size_t j = (i + 1) % polygon_pixels.size();
+            const auto& [x1, y1] = polygon_pixels[i];
+            const auto& [x2, y2] = polygon_pixels[j];
+
+            // Check if edge crosses the scanline
+            if ((y1 <= y && y < y2) || (y2 <= y && y < y1)) {
+                // Calculate intersection x-coordinate
+                int x_intersect = x1 + (((y - y1) * (x2 - x1)) / (y2 - y1));
+                x_intersect = std::max(0, std::min(x_intersect, width - 1));
+                intersections.push_back(x_intersect);
+            }
+        }
+
+        // Sort intersections and fill between pairs
+        std::sort(intersections.begin(), intersections.end());
+        for (size_t i = 0; i + 1 < intersections.size(); i += 2) {
+            int x_start = intersections[i];
+            int x_end = std::min(intersections[i + 1], width - 1);
+// Use SIMD for horizontal line filling
+#pragma omp simd
+            for (int x = x_start; x <= x_end; ++x) {
+                image[(y * width) + x] = fill_value;
+            }
+        }
+    }
+}
+
+bool GraphCreator::writeImageToPNG(const std::string& filename, const std::vector<unsigned char>& image_data, int width,
+                                   int height, int channels) {
+    return stbi_write_png(filename.c_str(), width, height, channels, image_data.data(), width * channels) != 0;
+}
+
+void GraphCreator::generateCoastlineImage(const std::string& coastlines_file, const std::string& output_image_path,
+                                          int width, int height) {
+    auto start_total = std::chrono::steady_clock::now();
+
+    std::cout << "Extracting coastlines from OSM data..." << std::endl;
+    auto start_reading = std::chrono::steady_clock::now();
+
+    // Clear existing data
+    m_coastline_nodes.clear();
+    m_coastline_ways.clear();
+
+    // Extract coastlines from OSM data
+    osmium::io::Reader reader{coastlines_file, osmium::osm_entity_bits::node | osmium::osm_entity_bits::way};
+
+    using index_type = osmium::index::map::SparseMemArray<osmium::unsigned_object_id_type, osmium::Location>;
+    index_type index;
+    osmium::handler::NodeLocationsForWays<index_type> location_handler{index};
+    location_handler.ignore_errors();
+
+    CoastlineHandler handler(&m_coastline_nodes, &m_coastline_ways);
+
+    osmium::apply(reader, location_handler, handler);
+    reader.close();
+
+    auto end_reading = std::chrono::steady_clock::now();
+    std::cout << "Reading time: "
+              << std::chrono::duration_cast<std::chrono::milliseconds>(end_reading - start_reading).count() << " ms"
+              << std::endl;
+
+    std::cout << "Extracted " << m_coastline_nodes.size() << " nodes and " << m_coastline_ways.size() << " ways"
+              << std::endl;
+
+    // Merge ways to create continuous coastlines
+    auto start_merging = std::chrono::steady_clock::now();
+    merge_ways();
+    auto end_merging = std::chrono::steady_clock::now();
+
+    std::cout << "Merging time: "
+              << std::chrono::duration_cast<std::chrono::milliseconds>(end_merging - start_merging).count() << " ms"
+              << std::endl;
+
+    std::cout << "After merging: " << m_coastline_ways.size() << " ways" << std::endl;
+
+    // Rasterize coastlines
+    std::cout << "Rasterizing coastlines to " << width << "x" << height << " image..." << std::endl;
+    auto start_rasterizing = std::chrono::steady_clock::now();
+    auto image_data = rasterizeCoastlines(width, height, m_coastline_nodes, m_coastline_ways);
+    auto end_rasterizing = std::chrono::steady_clock::now();
+
+    std::cout << "Rasterizing time: "
+              << std::chrono::duration_cast<std::chrono::milliseconds>(end_rasterizing - start_rasterizing).count()
+              << " ms" << std::endl;
+
+    // Write to PNG file
+    std::cout << "Writing image to " << output_image_path << std::endl;
+    auto start_writing = std::chrono::steady_clock::now();
+    if (writeImageToPNG(output_image_path, image_data, width, height, 1)) {
+        auto end_writing = std::chrono::steady_clock::now();
+        std::cout << "Writing time: "
+                  << std::chrono::duration_cast<std::chrono::milliseconds>(end_writing - start_writing).count() << " ms"
+                  << std::endl;
+
+        auto end_total = std::chrono::steady_clock::now();
+        std::cout << "Total time: "
+                  << std::chrono::duration_cast<std::chrono::milliseconds>(end_total - start_total).count() << " ms"
+                  << std::endl;
+
+        std::cout << "Successfully wrote coastline image to " << output_image_path << std::endl;
+    } else {
+        std::cerr << "Failed to write image to " << output_image_path << std::endl;
     }
 }
 }  // namespace labosm

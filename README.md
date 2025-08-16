@@ -15,6 +15,12 @@ Run `./build/labosm` to see most usage examples.
 
 For image based filtering download [this image from NASA](https://eoimages.gsfc.nasa.gov/images/imagerecords/73000/73963/gebco_08_rev_bath_21600x10800.png).
 
+You can also generate the images based on the OSM data. This takes around `134s = 2,23min` for a `21600x10800` image.
+This is achieved by rendering/rasterizing the OSM data.
+
+The generated image can be found in `images/image_osm_data_paralell.png`:
+![](images/image_osm_data_paralell.png)
+
 Example workflow looks like this to generate graph with `4M` points and run simpleserver with just dijkstra algorithm:
 1. `./build/labosm generate_points planet-coastlinespbf-cleaned.osm.pbf output/4M 4000000`
 2. `./build/labosm points_to_fmi output/4M_filtered_points.geojson output/6M_graph.fmi`
@@ -25,8 +31,10 @@ Example workflow looks like this to generate graph with `4M` points and run simp
   - Results in `4000000` Points in water `grep -o "Point" < filtered_points_4M.geojson | wc -l`
 - On Land filtering based on image test 4M Points: `3155ms = 3,1s`
     - Results in `4000000` Points in water `grep -o "Point" < filtered_points_image_4M.geojson | wc -l`
+- Generating `21600x10800` image based on OSM Data: `134s = 2,23min`
 - Generating FMI Graph with 16 Threads and `4000000` Points: `9874 = 9,8s`
   - Results in `21754558` Edges
+
 
 ### CH and HL Preprocessing Time
 

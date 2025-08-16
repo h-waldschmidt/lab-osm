@@ -84,6 +84,18 @@ class GraphCreator {
      */
     void generateGraph(const std::string& points_file, const std::string& output_file_path);
 
+    /**
+     * @brief Generate a coastline-based water mask image from OSM data.
+     * This is a convenience function that extracts coastlines, rasterizes them, and saves the result.
+     *
+     * @param coastlines_file The path to the OSM coastlines file.
+     * @param output_image_path The path for the output image.
+     * @param width Width of the output image.
+     * @param height Height of the output image.
+     */
+    void generateCoastlineImage(const std::string& coastlines_file, const std::string& output_image_path, int width,
+                                int height);
+
    private:
     // The nodes and ways of the coastlines extracted from the osm.pbf file
     NodeMap m_coastline_nodes;
@@ -180,5 +192,43 @@ class GraphCreator {
      */
     void randomizeNodeOrderDFS(std::vector<std::pair<double, double>>& points,
                                std::vector<std::vector<labosm::Edge>>& graph);
+
+    /**
+     * @brief Rasterize coastline data into a binary image.
+     * Creates an image where water areas are black (0) and land areas are white (255).
+     * Uses polygon filling to determine which areas are land based on coastline polygons.
+     *
+     * @param width Width of the output image.
+     * @param height Height of the output image.
+     * @param nodes The map of nodes (id -> coordinates).
+     * @param ways The map of ways (id -> list of node ids).
+     * @return A vector containing the rasterized image data (grayscale, 1 byte per pixel).
+     */
+    std::vector<unsigned char> rasterizeCoastlines(int width, int height, const NodeMap& nodes, const WayList& ways);
+
+    /**
+     * @brief Write image data to a PNG file.
+     *
+     * @param filename The path to the output PNG file.
+     * @param image_data The image data to write.
+     * @param width Width of the image.
+     * @param height Height of the image.
+     * @param channels Number of channels (1 for grayscale, 3 for RGB, 4 for RGBA).
+     * @return True if the image was written successfully, false otherwise.
+     */
+    bool writeImageToPNG(const std::string& filename, const std::vector<unsigned char>& image_data, int width,
+                         int height, int channels = 1);
+    /**
+     * @brief Fill a polygon using parallel scanline algorithm with OpenMP.
+     * This version parallelizes both the polygon processing and individual scanlines.
+     *
+     * @param image The image data to modify.
+     * @param polygon_pixels Vector of pixel coordinates forming the polygon.
+     * @param width Width of the image.
+     * @param height Height of the image.
+     * @param fill_value The value to fill the polygon with.
+     */
+    void fillPolygonParallel(std::vector<unsigned char>& image, const std::vector<std::pair<int, int>>& polygon_pixels,
+                             int width, int height, unsigned char fill_value);
 };
 }  // namespace labosm
